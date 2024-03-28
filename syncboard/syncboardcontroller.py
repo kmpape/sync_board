@@ -58,15 +58,12 @@ class SyncBoardController:
 
     def disable_led(
             self,
-            led_id: int,
+            led_id: Optional[int] = None,
     ):
-        if led_id not in self.LED_ID:
+        if (led_id is not None) and (led_id not in self.LED_ID):
             LOGGER.warning(f"LED ID {led_id} unknown. Disabling all LEDs.")
-            led_id = -1
-        if led_id == -1:
-            led_ids = self.LED_ID
-        else:
-            led_ids = [led_id]
+            led_id = None
+        led_ids = self.LED_ID if led_id is None else [led_id]
         for _led_id in led_ids:
             self.send_command(Command.format(Command.SWITCH_LED, _led_id, 0))
             self._led_configs[_led_id]['status'] = "on"
@@ -154,6 +151,9 @@ class SyncBoardController:
         -------
 
         """
+        if led_id is None:
+            LOGGER.debug(f"Nothing to setup for led_id {led_id}.")
+            return
         if led_id not in self.LED_ID:
             raise ValueError(f"LED ID {led_id} not available. Must be in {self.LED_ID}.")
         if self._is_equal_led_config(led_id=led_id, feedback_mode=feedback_mode, intensity=intensity):
