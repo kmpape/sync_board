@@ -8,7 +8,16 @@ from syncboard.serialconnection import SerialConnection
 from syncboard.command import Command
 
 
+FORMATTER = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+LOGGING_LEVEL = logging.INFO
 LOGGER = logging.getLogger(__name__)
+for handler in LOGGER.handlers:
+    LOGGER.removeHandler(handler)
+LOGGER.setLevel(LOGGING_LEVEL)
+handler = logging.StreamHandler()
+handler.setFormatter(FORMATTER)
+LOGGER.addHandler(handler)
+LOGGER.propagate = False
 
 
 class SyncBoardController:
@@ -66,7 +75,7 @@ class SyncBoardController:
         led_ids = self.LED_ID if led_id is None else [led_id]
         for _led_id in led_ids:
             self.send_command(Command.format(Command.SWITCH_LED, _led_id, 0))
-            self._led_configs[_led_id]['status'] = "on"
+            self._led_configs[_led_id]['status'] = "off"
 
     def enable_led(
             self,
@@ -110,7 +119,11 @@ class SyncBoardController:
     def initialise(self):
         self.attach_leds()
         self.enable_system()
+        self._setup_leds()
         self._is_initialised = True
+
+    def is_initialised(self) -> bool:
+        return self._is_initialised
 
     def led_is_on(self, led_id: int):
         if led_id not in self.LED_ID:
@@ -124,7 +137,8 @@ class SyncBoardController:
             self.connection.send_command(command)
             # TODO SyncBoard does not seem to respond that fast
             response = self.connection.read_response()
-
+        if 'error' in response:
+            LOGGER.ERROR(response.rstrip('#%').lstrip('$error/'))
         return response
 
     def set_dac(self, channel: int, voltage: float):
@@ -162,6 +176,10 @@ class SyncBoardController:
         self.send_command(Command.format(Command.SETUP_LED, led_id, feedback_mode, intensity))
         self._led_configs[led_id]['mode'] = feedback_mode
         self._led_configs[led_id]['intensity'] = intensity
+
+    def _setup_leds(self):
+        for _led_id in self.LED_ID:
+            self.setup_led(led_id=_led_id)
 
     def setup_signal_dac(self):
         # TODO
