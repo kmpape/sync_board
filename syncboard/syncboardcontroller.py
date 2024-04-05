@@ -117,6 +117,9 @@ class SyncBoardController:
         self._is_initialised = False
 
     def initialise(self):
+        if self.is_initialised():
+            LOGGER.warning("Sync board already initialised. Returning.")
+            return
         self.attach_leds()
         self.enable_system()
         self._setup_leds()

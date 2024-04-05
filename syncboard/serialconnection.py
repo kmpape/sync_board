@@ -2,14 +2,14 @@ import logging
 from contextlib import contextmanager
 import serial
 import time
-from typing import List
+from typing import List, Union
 
 LOGGER = logging.getLogger(__name__)
 
 
 class SerialConnection:
     NUM_SIG_FIG_FLOAT = 7
-    DEBUG_MODE = True
+    DEBUG_MODE = False
     def __init__(
         self,
         port: str,
@@ -43,13 +43,13 @@ class SerialConnection:
         LOGGER.debug(f"Sending data: {data}")
         self.connection.write(data)
 
-    def send_command(self, command: str):
+    def send_command(self, command: str) -> Union[None, List[str]]:
         encoded_command = command.encode()
         self.send(encoded_command)
         if self.DEBUG_MODE:
-            responses = self.read_responses(wait_time=1)
-            for r in responses:
-                print(r)
+            responses = self.read_responses(wait_time=0)
+        else:
+            return None
 
     def read_response(self) -> str:
         # TODO consider strings starting with "error/"
