@@ -44,7 +44,7 @@ class SyncBoardController:
 
     @classmethod
     def from_serial_port(
-        cls, port: str = '/dev/ttyAMC0', baud_rate: int = 2000000, *tiger_args, **tiger_kwargs
+        cls, port: str = '/dev/ttyACM0', baud_rate: int = 2000000, *tiger_args, **tiger_kwargs
     ) -> "SyncBoardController":
         return cls(SerialConnection(port, baud_rate), *tiger_args, **tiger_kwargs)
 
@@ -88,7 +88,7 @@ class SyncBoardController:
         Parameters
         ----------
         led_id: int                 LED ID
-        intensity: float            LED brightness in [0,1]
+        intensity: float            LED brightness in [0,1] (and NOT in [0,100])
         duration: Optional[float]   If not None, switches LED on for duration only (in milliseconds).
 
         Returns
@@ -116,10 +116,11 @@ class SyncBoardController:
         self.disable_system()
         self._is_initialised = False
 
-    def initialise(self):
-        if self.is_initialised():
-            LOGGER.warning("Sync board already initialised. Returning.")
-            return
+    def initialise(self, force_init: bool = False):
+        if not force_init:
+            if self.is_initialised():
+                LOGGER.warning("Sync board already initialised. Returning.")
+                return
         self.attach_leds()
         self.enable_system()
         self._setup_leds()
@@ -141,7 +142,7 @@ class SyncBoardController:
             # TODO SyncBoard does not seem to respond that fast
             response = self.connection.read_response()
         if 'error' in response:
-            LOGGER.ERROR(response.rstrip('#%').lstrip('$error/'))
+            LOGGER.error(response.rstrip('#%').lstrip('$error/'))
         return response
 
     def set_dac(self, channel: int, voltage: float):
