@@ -44,7 +44,7 @@ class SyncBoardController:
 
     @classmethod
     def from_serial_port(
-        cls, port: str = '/dev/ttyACM0', baud_rate: int = 2000000, *tiger_args, **tiger_kwargs
+        cls, port: str = '/dev/ttyACM1', baud_rate: int = 2000000, *tiger_args, **tiger_kwargs
     ) -> "SyncBoardController":
         return cls(SerialConnection(port, baud_rate), *tiger_args, **tiger_kwargs)
 
@@ -97,6 +97,8 @@ class SyncBoardController:
         """
         if led_id not in self.LED_ID:
             raise ValueError(f"LED ID {led_id} not available. Must be in {self.LED_ID}.")
+        if intensity > 0.29 or intensity < 0:
+            LOGGER.warning(f"Received intensity {intensity} for enable_led.")
         self.setup_led(led_id=led_id, intensity=intensity)
         if duration is None:
             self.send_command(Command.format(Command.SWITCH_LED, led_id, 1))
@@ -135,12 +137,20 @@ class SyncBoardController:
         return self._led_configs[led_id]['status'] == 'on' or (self._led_configs[led_id]['status'] == 'timed' and
                                                                time.time() > self._led_configs[led_id]['stop_time'])
 
-    def send_command(self, command: str) -> str:
+    def read_photodiode(self, channel: int = 8) -> float | None:
+        response_str = self.send_command(Command.format(Command.MEASURE_PHOTODIODE, channel), wait_time=1)
+        try:
+            return float(response_str.rstrip('#%').lstrip('$').split('/')[1])
+        except Exception as e:
+            LOGGER.warning(f"Received malformatted response from read_photodiode: {response_str}, {e}")
+            return None
+
+    def send_command(self, command: str, wait_time: float = 0) -> str:
         LOGGER.debug(f"Sending command {command}.")
         with self._lock:
             self.connection.send_command(command)
             # TODO SyncBoard does not seem to respond that fast
-            response = self.connection.read_response()
+            response = self.connection.read_response(wait_time=wait_time)
         if 'error' in response:
             LOGGER.error(response.rstrip('#%').lstrip('$error/'))
         return response

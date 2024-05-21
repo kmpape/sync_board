@@ -51,11 +51,30 @@ class SerialConnection:
         else:
             return None
 
-    def read_response(self) -> str:
+    def read_response(self, wait_time: float = 0) -> str:
+        """
+        Reads the response from a serial port. Returns an empty str if no data available.
+
+        Parameters
+        ----------
+        wait_time: float
+            Wait wait_time (in seconds) until the first response appears on the serial port.
+
+        Returns
+        -------
+        response: str
+            Stripped response string. Empty string if no response.
+        """
         # TODO consider strings starting with "error/"
         response = self.connection.readline().decode()
         LOGGER.debug(f"Received: {response}")
-
+        if wait_time > 0 and response == '':
+            start_time = time.perf_counter()
+            while time.perf_counter() - start_time < wait_time:
+                if self.connection.in_waiting > 0:
+                    response = self.connection.readline().decode()
+                if response != '':
+                    break
         return response.strip()
 
     def read_responses(self, wait_time: float) -> List[str]:

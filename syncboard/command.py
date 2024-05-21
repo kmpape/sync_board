@@ -12,6 +12,7 @@ class Command:
     GET_LED_SETUP = "getLEDSetup"
     GET_SIGNAL_ADC = "getSignalADC"
     MEASURE_LED = "measureLED"
+    MEASURE_PHOTODIODE = "measurePhotodiode"
     READ_ADC = "readADC"
     READ_DI = "readDI"
     SETUP_GPIO = "setupGPIO"
