@@ -26,6 +26,6 @@ void setupDACSPI(bool turnOn = false);
 void setDACSPI(int channel, float value);
 void setupDACI2C(bool turnOn = false);
 void setDACI2C(int channel, float value);
-
+void I2CScan();
 
 #endif // ICDRIVERS_H

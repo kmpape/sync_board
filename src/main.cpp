@@ -8,6 +8,7 @@
 #include "IOController.h"
 #include "digitalWriteFast.h"
 #include "LEDDriver.h"
+#include "ICDrivers.h"
 // Debug mode and various parameters
 bool debugmode = true; // Set to true to enable debug mode. This will do some extra things. false for normal operation.
 unsigned int debugtime = 0;
@@ -1091,6 +1092,8 @@ void executeSerialCommand(String command, String commandString){
     
     // serialSend("return data", arg0, arg1,arg2); // Send the first argument back over serial (with the word dog")
     
+  } else if (command == "scanI2C") {
+    I2CScan(); // Scan the I2C bus and print out the results.
   }
 }
 
