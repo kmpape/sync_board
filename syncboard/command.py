@@ -33,6 +33,7 @@ class Command:
     SYSTEM_ENABLE = "systemEnable"
     WRITE_GPIO = "writeGPIO"
     WRITE_DO = "writeDO"
+    SCAN_I2C = "scanI2C"
 
     _NUM_SIG_FIG_FLOAT = 7
     _START_CHAR = "$"

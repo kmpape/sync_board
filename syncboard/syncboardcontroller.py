@@ -208,6 +208,9 @@ class SyncBoardController:
     def stop_signal(self, index: int):
         self.send_command(Command.format(Command.STOP_SIGNAL, index))
 
+    def scan_i2c(self):
+        return self.send_command(Command.format(Command.SCAN_I2C))
+
     def _is_equal_led_config(
             self,
             led_id: int,

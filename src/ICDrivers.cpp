@@ -17,6 +17,8 @@ uint8_t LED_ADC_ADR = 0x49; //This is the ADC chip that reads the LED currents. 
 uint8_t LED_DAC_ADR = 0x57; //This is the DAC chip that sets the LED currents. It is on the LED board.
 uint8_t LED_PWM_ADR = 0x50; //This is the PWM chip that configures the LED channels. It is on the LED board.
 
+uint8_t MagBoard_ADC_ADR = 0x4A; //This is the ADC chip that reads the magnet currents. It is on the magnet board.
+
 void I2CWrite(int address, uint8_t data, size_t length = 1){ // Overload in case they sendone thing at a time.
     // Writes data to i2c address.
     

@@ -501,10 +501,44 @@ def debugtest():
     # ser.write(command.encode())  # Send the command
     getSerialResponses(2.25) # Wait for 0.2 seconds for the reply/s
 
+def scanI2c():
+    command = "$scanI2C#%" # Scan the I2C bus for devices
+    ser.write(command.encode())  # Send the command
+    getSerialResponses(2.25) # Wait for 0.2 seconds for the reply/s
 
+def testMagnetEnable(configure_gpio = False):
 
+    if configure_gpio:
+        # Disable the system so that we can change the GPIO
+        command = "$systemDisable#%" #System must be disabled to change GPIO
+        ser.write(command.encode())  # Send the command
+        getSerialResponses(2.25) # Wait for 0.2 seconds for the reply/s
 
-enableSystem()
+        command = "$setupGPIO/29/1/0/0#%" #GPIO 29, enabled, mode 0 (digital IO), and output state.
+        ser.write(command.encode())  # Send the command
+        getSerialResponses(2.25) # Wait for 0.2 seconds for the reply/s
+
+        # Now enable the system
+        command = "$systemEnable#%" #System must be disabled to change GPIO
+        ser.write(command.encode())  # Send the command
+        getSerialResponses(2.25) # Wait for 0.2 seconds for the reply/s
+
+    command = "$writeGPIO/29/1#%" # Write 1 to first digital output.
+    ser.write(command.encode()) # Send the command
+    getSerialResponses(2.25) # Wait for 0.2 seconds for the reply/s
+    print("Write GPIO 29 to 1")
+
+    # wait for a bit
+    time.sleep(1)
+
+    command = "$writeGPIO/29/0#%" # Write 0 to first digital output.
+    ser.write(command.encode()) # Send the command
+    getSerialResponses(2.25) # Wait for 0.2 seconds for the reply/s
+    print("Write GPIO 29 to 0")
+
+scanI2c()
+testMagnetEnable()
+# enableSystem()
 # time.sleep(0.5)
 # ADCReadSingleTest()
 # ADCReadSequenceTest()
@@ -513,7 +547,7 @@ enableSystem()
 # DACSetADCReadTest()
 # testSwitches()
 # testDigitalIO()
-LEDTest()
+# LEDTest()
 # LEDDisco()
 # testtrigger()   
 # EnableTest()
