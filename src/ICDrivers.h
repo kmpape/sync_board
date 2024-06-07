@@ -13,6 +13,8 @@ extern uint8_t SyncBoard_ADC_ADR;
 extern uint8_t LED_ADC_ADR;
 extern uint8_t LED_DAC_ADR;
 extern uint8_t LED_PWM_ADR;
+extern uint8_t MagBoard_ADC_ADR;
+extern uint8_t MagBoard_DAC_ADR;
 
 void I2CWrite(int address, uint8_t* data, size_t length);
 void I2CWrite(int address, uint8_t data, size_t length = 1);

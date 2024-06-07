@@ -9,6 +9,8 @@
 #include "digitalWriteFast.h"
 #include "LEDDriver.h"
 #include "ICDrivers.h"
+#include "MagnetDriver.h"
+
 // Debug mode and various parameters
 bool debugmode = true; // Set to true to enable debug mode. This will do some extra things. false for normal operation.
 unsigned int debugtime = 0;
@@ -19,7 +21,7 @@ bool systemEnable = false; // Flag to indicate if the system is enabled or not. 
 // Note any time that we have the system disabled we should also have the IO disabled. This is because the IO is used to control the system.
 
 bool LEDAttached = false; // Flag to tell if the LED board is connected. True would mean we HAVE connected the LED driver. Note there are more LED parameters below for timing purposes.
-
+bool MagAttached = false; // Flag to tell if the magnet board is connected. True would mean we HAVE connected the magnet driver.
 
 // Values used in serial comms
 String commandString;
@@ -513,6 +515,14 @@ void executeSerialCommand(String command, String commandString){
               }
               bool LEDpresent = argGetBool(commandString,0); // If the LED is present or not.
               LEDAttached = LEDpresent; //Set to value of whatever the user sent.
+  } else if (command == "attachMagnet") {
+              // Attaches the Magnet driver. This is called when the Magnet driver is connected and we want to start using it.
+              if (systemEnable == true){
+                raiseError("Cant attach Magnet while system is enabled");
+                return;
+              }
+              bool MagnetPresent = argGetBool(commandString,0); // If the Magnet is present or not.
+              MagAttached = MagnetPresent; //Set to value of whatever the user sent.
   } else if (command == "setupSignalMode"){
               ///Used to set up a dynamic signal mode. Note it will not do anything if systemEnable is true. We CAN do this why system is enabled, but not while a signal is active.
               //Argument 1 = signal index, argument 2 = signal repeat, argument 3 = signal mode, argument 4 = signal options, 
@@ -1094,6 +1104,15 @@ void executeSerialCommand(String command, String commandString){
     
   } else if (command == "scanI2C") {
     I2CScan(); // Scan the I2C bus and print out the results.
+  } 
+  else if (command == "setupMagnetBoard") {
+    setupMagnetBoard();
+  } else if (command == "singleReadMagnetADC") {
+    int channel = argGetInt(commandString,0); // Get the first argument from the serial input
+    uint8_t value = singleReadMagnetADC(channel);
+    serialSend("Read value ", value);
+  } else {
+    raiseError("Command "+command+" not recognised");
   }
 }
 

@@ -13,9 +13,13 @@ def raiseError(message):
     print(message)
 
 def enableSystem():
-    command = "$attachLED/true#%" #Tell it we want to set up to attach the LEDs
-    ser.write(command.encode())  # Send the command
+    # command = "$attachLED/true#%" #Tell it we want to set up to attach the LEDs
+    # ser.write(command.encode())  # Send the command
     command = "$systemEnable#%" #system can be on for this
+    ser.write(command.encode())  # Send the command
+
+def disableSystem():
+    command = "$systemDisable#%" #system can be on for this
     ser.write(command.encode())  # Send the command
 
 def parse_reply(reply):
@@ -536,8 +540,28 @@ def testMagnetEnable(configure_gpio = False):
     getSerialResponses(2.25) # Wait for 0.2 seconds for the reply/s
     print("Write GPIO 29 to 0")
 
-scanI2c()
-testMagnetEnable()
+def testReadMagnetADC(channel=0):
+    command = f"$singleReadMagnetADC/{channel}#%" # Read ADC channel 0
+    ser.write(command.encode())  # Send the command
+    getSerialResponses(0.2) # Wait for 0.2 seconds for the reply/s
+
+def attachMagnetBoard():
+    command = "$attachMagnet/1#%" # Attach the magnet board
+    ser.write(command.encode())  # Send the command
+    getSerialResponses(0.2) # Wait for 0.2 seconds for the reply/s
+
+def setupMagnetBoard():
+    command = "$setupMagnetBoard#%"
+    ser.write(command.encode())  # Send the command
+    getSerialResponses(0.2) # Wait for 0.2 seconds for the reply/s
+
+attachMagnetBoard()
+enableSystem()
+# scanI2c()
+setupMagnetBoard()
+testReadMagnetADC(1)
+disableSystem()
+# testMagnetEnable()
 # enableSystem()
 # time.sleep(0.5)
 # ADCReadSingleTest()
