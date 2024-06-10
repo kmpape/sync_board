@@ -31,6 +31,9 @@ void setupMagnetBoard() {
     // adc->channel(0)->minScale = 0;
     // adc->channel(0)->maxScale = 0xFFFF; // Just return the full scale value for now
     adcEnabled = true;
+
+    setupMagDACI2C(true);
+    dacEnabled = true;
 }
 
 uint8_t singleReadMagnetADC(uint8_t channel) {

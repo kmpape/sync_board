@@ -555,6 +555,46 @@ def setupMagnetBoard():
     ser.write(command.encode())  # Send the command
     getSerialResponses(0.2) # Wait for 0.2 seconds for the reply/s
 
+def singleWriteMagnetDAC(channel=4, voltage=0.5):
+    command = f"$singleWriteMagnetDAC/{channel}/{voltage}#%" # Write to DAC channel 4
+    ser.write(command.encode())  # Send the command
+    getSerialResponses(0.2) # Wait for 0.2 seconds for the reply/s
+
+def sineWaveMagnetDAC(channel=4):
+    command = f"$sineWaveMagnetDAC/{channel}#%" # Write to DAC channel 4
+    ser.write(command.encode())  # Send the command
+    getSerialResponses(0.2) # Wait for 0.2 seconds for the reply/s
+
+
+def MagDACSetSequenceTest(channel=4):
+    import math
+    #DEmo of writing a series of DAC values then getting it to repeat.
+    
+    command = f"$setupSignalMode/0/1/3/{channel}#%" #0 = signal index / 1 = repeat / 1= DAC / 1 = channel 1
+    ser.write(command.encode())  # Send the command
+
+    # command = "$setupSignalDAC/0/4/0.1/2/1.0/3/0.5/2/0.3/3#%" #0=signal index 0 / 4 = number of voltage/timing pairs we are going to send. / 0.1 = first voltage / 2 = first time in ms / 1.0 second voltage / 3 = second time in ms .... and so on
+    # command = "$setupSignalDAC/0/4/0.1/0.01/3.1/0.01/0.1/0.01/3.1/0.01#%"  #This is to test fast speed 10us transition square wave,
+    
+    N = 80
+    sequence = "/".join([f"{1 + math.sin(2*math.pi*i/N):.2f}/0.1" for i in range(N)])
+    command = f"$setupSignalDAC/0/{N}/" + sequence + "#%"
+
+    # Note for above the data (voltage) is in Volts and the timings are in miliseconds. A pair like 0.1/2/ would mean 0.1 volts for 2ms. 
+    # You can run the timings down to about 100 us but below that you will get errors as it takes some nonzero time to set the SPI dac.
+    # Note the final value of the signal is what will be left in the DAC when you stop the signal (or it ends if reepeat= false)
+    
+    ser.write(command.encode())  # Send the command
+
+    command = "$startSignal/0#%" #0 = signal index 0
+    ser.write(command.encode())  # Send the command
+
+    time.sleep(3)
+    command = "$stopSignal/0#%" #0 = signal index 0 (stop recording) Note this would do nothing if we have not had a repeating signal that has finished recording.
+    ser.write(command.encode())  # Send the command
+
+    getSerialResponses(5)
+
 # Time received: 218213.5055261 Reply: I2C device found at address 0x08  !
 # Time received: 218213.5124406 Reply: I2C device found at address 0x4A  !
 # Time received: 218213.5135137 Reply: I2C device found at address 0x54  !
@@ -568,11 +608,19 @@ def setupMagnetBoard():
 # 0xCA # 11001010
 # 0xD4 # 11010100
 
-# attachMagnetBoard()
+disableSystem()
+attachMagnetBoard()
 enableSystem()
-scanI2c()
-# setupMagnetBoard()
-# testReadMagnetADC(1)
+# scanI2c()
+setupMagnetBoard()
+# time.sleep(1)
+# singleWriteMagnetDAC(1, 0)
+# time.sleep(1)
+# singleWriteMagnetDAC(1, 3)
+# time.sleep(1)
+# singleWriteMagnetDAC(1, 0)
+# time.sleep(1)
+# MagDACSetSequenceTest(1)
 disableSystem()
 # testMagnetEnable()
 # enableSystem()

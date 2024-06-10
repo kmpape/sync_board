@@ -26,9 +26,12 @@ void setupPWMs();
 uint16_t readADCOnce(int channel, bool internal = true, int ADC_ID = 0);
 void setupDACSPI(bool turnOn = false);
 void setDACSPI(int channel, float value);
-void setupDACI2C(bool turnOn = false);
+void setupDACI2C(int addr, bool turnOn = false);
+void setupLEDDACI2C(bool turnOn = false);
+void setupMagDACI2C(bool turnOn = false);
 void setDACI2C(int addr, int channel, float value);
 void setLEDDACI2C(int channel, float value);
+void setMagDACI2C(int channel, float value);
 void I2CScan();
 
 #endif // ICDRIVERS_H

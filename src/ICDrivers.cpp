@@ -334,8 +334,9 @@ void setupDACSPI(bool turnOn = false){
 
 }
 
+// Not intended for public use. Use setLEDDACI2C or setMagDACI2C instead.
+// Channel 1-8 and value 0-3.3V
 void setDACI2C(int addr, int channel, float value){
-    //Channel 1-8 and value 0-3.3V
     if (value<0.0){
         value = 0.0;
     } else if (value>3.3){
@@ -365,6 +366,7 @@ void setDACI2C(int addr, int channel, float value){
 
 }
 
+//Channel 1-8 and value 0-3.3V
 void setLEDDACI2C(int channel, float value) {
     //This is to send valules to AD5669 on the LED board.
     if (LEDAttached == false){
@@ -374,26 +376,31 @@ void setLEDDACI2C(int channel, float value) {
     setDACI2C(LED_DAC_ADR, channel, value);
 }
 
-void setupDACI2C(bool turnOn = false){
-    //This is to set up AD5669 on the LED board. It is a 16 bit DAC with 8 channels controlled by I2C.
-    if (LEDAttached == false){
-        raiseError("You tried to set up the DAC on the LED board but it is not attached. You should check your hardware and connections.");
+//Channel 1-8 and value 0-3.3V
+void setMagDACI2C(int channel, float value) {
+    //This is to send valules to AD5669 on the Magnet board.
+    if (MagAttached == false){
+        raiseError("You tried to set the DAC on the Magnet board but it is not attached. You should check your hardware and connections.");
         return;
     }
+    setDACI2C(MagBoard_DAC_ADR, channel, value);
+}
+
+void setupDACI2C(int addr, bool turnOn = false){
 
     //First we power everything down.
     uint8_t data1 = 0x40; // Command byte for set power mode.
     uint8_t data2 = 0x02; // Data byte for power down mode - this is 100kOhm to ground.
     uint8_t data3 = 0xFF; // Data byte for setting all channels to power down mode.
     uint8_t data[3] = {data1, data2, data3}; //Conbine into array.
-    I2CWrite(LED_DAC_ADR, data, 3); // Send tp DAC
+    I2CWrite(addr, data, 3); // Send tp DAC
 
     //Now tell it to use external reference.
     data1 = 0x80; // Command for setting reference bits.
     data2 = 0x00; // Dont care
     data3 = 0x00; // Set internal referene to off. 0x01 would be on.
     data[0] = data1; data[1] = data2; data[2] = data3; //Combine into array.
-    I2CWrite(LED_DAC_ADR, data, 3); // Send tp DAC
+    I2CWrite(addr, data, 3); // Send tp DAC
 
     if (turnOn){ //Only if we are turning it on do we pull it on.
         //Now we power it up.
@@ -401,8 +408,26 @@ void setupDACI2C(bool turnOn = false){
         data2 = 0x00; // Data byte for power down mode - this is normal operation (i.e. it is on)
         data3 = 0xFF; // Data byte for setting all channels to on modee.
         data[0] = data1; data[1] = data2; data[2] = data3; //Combine into array.
-        I2CWrite(LED_DAC_ADR, data, 3); // Send tp DAC
+        I2CWrite(addr, data, 3); // Send tp DAC
     }
+}
+
+void setupLEDDACI2C(bool turnOn = false){
+    //This is to set up AD5669 on the LED board. It is a 16 bit DAC with 8 channels controlled by I2C.
+    if (LEDAttached == false){
+        raiseError("You tried to set up the DAC on the LED board but it is not attached. You should check your hardware and connections.");
+        return;
+    }
+    setupDACI2C(LED_DAC_ADR, turnOn);
+}
+
+void setupMagDACI2C(bool turnOn = false){
+    //This is to set up AD5669 on the Magnet board. It is a 16 bit DAC with 8 channels controlled by I2C.
+    if (MagAttached == false) {
+        raiseError("You tried to set up the DAC on the Magnet board but it is not attached. You should check your hardware and connections.");
+        return;
+    }
+    setupDACI2C(MagBoard_DAC_ADR, turnOn);
 }
 
 uint16_t readADCOnce(int channel, bool internal = false,  int ADC_ID = 0){
