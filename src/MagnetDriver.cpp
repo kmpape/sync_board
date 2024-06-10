@@ -6,14 +6,17 @@
 #include "MagnetDriver.h"
 
 bool adcEnabled = false;
+bool dacEnabled = false;
 
 // Channel mask determines which channels are enabled
 // e.g. 0x01 enables channel 0, 0x02 enables channel 1, 0x03 enables channels 0 and 1
 // 0xFF enables all channels
-uint8_t CHANNELS_MASK = 0x01;
+uint8_t ADC_CHANNELS_MASK = 0x01;
 
-ADS7828 device(0, SINGLE_ENDED | REFERENCE_OFF | ADC_ON, CHANNELS_MASK);
+ADS7828 device(0, SINGLE_ENDED | REFERENCE_OFF | ADC_ON, ADC_CHANNELS_MASK);
 ADS7828* adc = &device;
+
+
 
 // Could do this for known channels
 // ADS7828Channel* channel0 = adc->channel(0);
@@ -39,11 +42,11 @@ uint8_t singleReadMagnetADC(uint8_t channel) {
         raiseError("MagnetBoard: ADC not enabled. Enable it using setupMagnetBoard()");
         return 0;
     }
-    if (channel < 0 || channel > 7) {
+    if (channel > 7) {
         raiseError("MagnetBoard: Tried to read from invalid ADC channel "+String(channel)+".");
         return 0;
     }
-    if ((CHANNELS_MASK & (1 << channel)) == 0) {
+    if ((ADC_CHANNELS_MASK & (1 << channel)) == 0) {
         raiseError("MagnetBoard: Tried to read from invalid ADC channel "+String(channel)+". Channel is not enabled (check CHANNELS_MASK)");
         return 0;
     }

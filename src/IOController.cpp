@@ -443,7 +443,7 @@ void debugIO(int channel, float value){
     // setLEDFeedbackSignal(channel, false); // FOr this channel set it to optical feedback (false)
     // delay(5);
     // setLEDVoltageOutput(channel, true); // Also set so that it will be readin gout current from ADC.
-    // setDACI2C(channel, value); //Now set the voltage to be given by the user. Should be between 0 and 3.3V. 
+    // setLEDDACI2C(channel, value); //Now set the voltage to be given by the user. Should be between 0 and 3.3V. 
     
     // digitalWriteFast(LED_8_Enable, HIGH); // Enable the LED
     // delay(100); // Wait for 100ms

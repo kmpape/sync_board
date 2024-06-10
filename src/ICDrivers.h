@@ -27,7 +27,8 @@ uint16_t readADCOnce(int channel, bool internal = true, int ADC_ID = 0);
 void setupDACSPI(bool turnOn = false);
 void setDACSPI(int channel, float value);
 void setupDACI2C(bool turnOn = false);
-void setDACI2C(int channel, float value);
+void setDACI2C(int addr, int channel, float value);
+void setLEDDACI2C(int channel, float value);
 void I2CScan();
 
 #endif // ICDRIVERS_H

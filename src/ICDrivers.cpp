@@ -334,12 +334,7 @@ void setupDACSPI(bool turnOn = false){
 
 }
 
-void setDACI2C(int channel, float value){
-    //This is to send valules to AD5669 on the LED board.
-    if (LEDAttached == false){
-        raiseError("You tried to set the DAC on the LED board but it is not attached. You should check your hardware and connections.");
-        return;
-    }
+void setDACI2C(int addr, int channel, float value){
     //Channel 1-8 and value 0-3.3V
     if (value<0.0){
         value = 0.0;
@@ -366,8 +361,17 @@ void setDACI2C(int channel, float value){
 
     //Now we combine the data1 and data bytes into a uint8_t array to send
     uint8_t data[3] = {data1, upperByte, lowerByte};
-    I2CWrite(LED_DAC_ADR, data, 3); // Send the data to the DAC.
+    I2CWrite(addr, data, 3); // Send the data to the DAC.
 
+}
+
+void setLEDDACI2C(int channel, float value) {
+    //This is to send valules to AD5669 on the LED board.
+    if (LEDAttached == false){
+        raiseError("You tried to set the DAC on the LED board but it is not attached. You should check your hardware and connections.");
+        return;
+    }
+    setDACI2C(LED_DAC_ADR, channel, value);
 }
 
 void setupDACI2C(bool turnOn = false){
@@ -400,7 +404,6 @@ void setupDACI2C(bool turnOn = false){
         I2CWrite(LED_DAC_ADR, data, 3); // Send tp DAC
     }
 }
-
 
 uint16_t readADCOnce(int channel, bool internal = false,  int ADC_ID = 0){
     

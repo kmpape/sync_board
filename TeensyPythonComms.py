@@ -555,11 +555,24 @@ def setupMagnetBoard():
     ser.write(command.encode())  # Send the command
     getSerialResponses(0.2) # Wait for 0.2 seconds for the reply/s
 
-attachMagnetBoard()
+# Time received: 218213.5055261 Reply: I2C device found at address 0x08  !
+# Time received: 218213.5124406 Reply: I2C device found at address 0x4A  !
+# Time received: 218213.5135137 Reply: I2C device found at address 0x54  !
+
+# 0x54 in binary is 01010100
+# 0x4A in binary is 01001010
+
+# 0x08 in binary is 00001000
+# 0x88 # 10001000
+
+# 0xCA # 11001010
+# 0xD4 # 11010100
+
+# attachMagnetBoard()
 enableSystem()
-# scanI2c()
-setupMagnetBoard()
-testReadMagnetADC(1)
+scanI2c()
+# setupMagnetBoard()
+# testReadMagnetADC(1)
 disableSystem()
 # testMagnetEnable()
 # enableSystem()
