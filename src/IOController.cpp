@@ -236,7 +236,7 @@ void turnICsOff(){
         setupLEDDACI2C(false); // Turn on the DAC
     }
     if (MagAttached){
-        setupMagDACI2C(false); // Turn off the DAC
+        setupDACI2C(MagBoard_DAC_ADR, false); // Turn off the DAC
     }
 }
 

@@ -16,8 +16,9 @@ enum SIGNALMODE {
   DAC = 1,
   GPIO = 2,
   MAGDAC = 3,
+  MAGADC = 4,
 };
-u_int SIGNALMODES = 4; // Remember to update this if updating above enum
+u_int SIGNALMODES = 5; // Remember to update this if updating above enum
 
 // Debug mode and various parameters
 bool debugmode = true; // Set to true to enable debug mode. This will do some extra things. false for normal operation.
@@ -488,7 +489,9 @@ void signalHandler(int signalIndex){
   if (signalMode[signalIndex] == SIGNALMODE::ADC){ // If we are recording ADC
       float adcValue = readADC(signalOptions[signalIndex]); // Read the ADC value of the specified pin in signalOptions
       signalData[signalIndex][index] = adcValue; // Record the ADC value in the buffer.
-
+  } else if (signalMode[signalIndex] == SIGNALMODE::MAGADC) {
+      float adcValue = readADC(signalOptions[signalIndex], 2); // Read the ADC value of the specified pin in signalOptions
+      signalData[signalIndex][index] = adcValue; // Record the ADC value in the buffer.
   } else if (signalMode[signalIndex] == SIGNALMODE::DAC){ // If we are writing DAC
     setDAC(signalOptions[signalIndex], signalData[signalIndex][index]); //Set the DAC value of the specified pin in signalOptions to the value in the signalData.
   } else if (signalMode[signalIndex] == SIGNALMODE::GPIO){ // If we are doing GPIO
@@ -622,7 +625,7 @@ void executeSerialCommand(String command, String commandString){
                 raiseError("Number of values you asked DAC to record is out is out of range");
                 return;
               }
-              if (signalMode[sIndex]!=SIGNALMODE::ADC){ // If we arent in ADC mode then we have a problem.
+              if ((signalMode[sIndex]!=SIGNALMODE::ADC) && (signalMode[sIndex]!=SIGNALMODE::MAGADC)){ // If we arent in ADC mode then we have a problem.
                 raiseError("Signal mode is not ADC");
                 return;
               }
@@ -683,7 +686,7 @@ void executeSerialCommand(String command, String commandString){
                 raiseError("Signal index out of range");
                 return;
               }
-              if (signalMode[sIndex] != SIGNALMODE::ADC){ // If we arent in ADC mode then we have a problem.
+              if ((signalMode[sIndex] != SIGNALMODE::ADC) && (signalMode[sIndex] != SIGNALMODE::MAGADC)){ // If we arent in ADC mode then we have a problem.
                 raiseError("Signal mode is not ADC");
                 return;
               }
@@ -941,12 +944,13 @@ void executeSerialCommand(String command, String commandString){
   } else if (command == "readADC"){
           //used to read ADC pin if set that way.
           // Argument 0 is channel number from 1 to 8
-          int arg0 = argGetInt(commandString,0); // which pin
+          int arg0  = argGetInt(commandString,0); // which pin
+          int adcID = argGetInt(commandString,1); // which ADC ID
           if (systemEnable == false){ // If stuff is off you shouldnt be messing with this buddy
             raiseError("Cant read ADC while system disabled");
             return;
           }
-          float adcValue = readADC(arg0); // Read the ADC value
+          float adcValue = readADC(arg0, adcID); // Read the ADC value
           serialSend("readADC", adcValue); // Send the value back over serial
   } else if (command == "setDAC"){
           // used to set DAC on SyncBoard 

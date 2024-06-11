@@ -1,5 +1,6 @@
 import serial
 import time
+import matplotlib.pyplot as plt
 ser = serial.Serial('COM3', 2000000, timeout=0.001)
 data = []
 
@@ -99,11 +100,14 @@ def setupImageSequence(ImageActive, LEDChoice, ExposureTime = None,FilterWheelCh
 
 def getSerialResponses(time_responding):
 
+    replies = []
     start_time = time.perf_counter()
     while time.perf_counter() - start_time < time_responding:
         if ser.in_waiting > 0:
             reply = ser.readline().decode()  # Read the reply
             print("Time received: {:.7f}".format(time.perf_counter()) + " Reply: " + reply)
+            replies.append(reply)
+    return replies
 
 
 
@@ -190,13 +194,13 @@ def GPIOTest():
     getSerialResponses(2)
 
     
-def DACSetSingleTest():
+def DACSetSingleTest(channel=1, voltage=1.0):
     #Demo of writing a single DAC value.  
     # command = "$systemEnable#%" # Enable the system
     # ser.write(command.encode())  # Send the command
     # time.sleep(0.5)
 
-    command = "$setDAC/1/1.0#%" # set DAC channel 1 to 1.5 volts.
+    command = f"$setDAC/{channel:d}/{voltage:.2f}#%" # set DAC channel 1 to 1.5 volts.
     ser.write(command.encode())  # Send the command
     getSerialResponses(0.2) # Wait for 0.2 seconds for the reply/s
 
@@ -224,13 +228,13 @@ def DACSetSequenceTest():
 
     getSerialResponses(5)
     
-def ADCReadSingleTest():
+def ADCReadSingleTest(channel=1, ID=0):
     #Demo of reading a single ADC value.    
-    command = "$systemEnable#%" # Enable the system
-    ser.write(command.encode())  # Send the command
-    time.sleep(1)
+    # command = "$systemEnable#%" # Enable the system
+    # ser.write(command.encode())  # Send the command
+    # time.sleep(1)
 
-    command = "$readADC/1#%" # Read GPIO channel 1
+    command = f"$readADC/{channel:d}/{ID:d}#%" # Read GPIO channel 1 / ID 0
     ser.write(command.encode())  # Send the command
     getSerialResponses(0.2) # Wait for 0.2 seconds for the reply/s
 
@@ -266,6 +270,7 @@ def ADCReadSequenceTest():
     getSerialResponses(1)
 
 def DACSetADCReadTest():
+    
     # This is an example where we set up the DAC to write some signal sequence and read it back with the ADC.
     command = "$systemEnable#%" #system can be on for this
     ser.write(command.encode())  # Send the command
@@ -308,6 +313,56 @@ def DACSetADCReadTest():
 
     getSerialResponses(2)
 
+def magDACSetADCReadTest(adc=3, dac=8):
+    
+    # # This is an example where we set up the DAC to write some signal sequence and read it back with the ADC.
+    # command = "$systemEnable#%" #system can be on for this
+    # ser.write(command.encode())  # Send the command
+
+    command = f"$setupSignalMode/0/0/3/{dac}#%" #0 = signal index / 0 = no repeat / 3= MagDAC / 1 = channel 1
+    ser.write(command.encode())  # Send the command
+
+    command = "$setupSignalDAC/0/8/0.1/5/1.1/5/0.1/5/1.1/5/0.1/5/1.1/5/0.1/5/0.2/5/#%" #0=signal index 0 / 8 = number of voltage/timing pairs we are going to send.
+    # Note for above the data (voltage) is in Volts and the timings are in miliseconds. A pair like 0.1/2/ would mean 0.1 volts for 2ms. 
+    # You can run the timings down to about 100 us but below that you will get errors as it takes some nonzero time to set the SPI dac.
+    ser.write(command.encode())  # Send the command
+
+    #Set up the ADC
+    command = f"$setupSignalMode/1/0/4/{adc}#%" #1 = signal index / 0 = not repeat / 4 = MagADC / 1 = channel 1
+    ser.write(command.encode())  # Send the command
+
+    #Next we set up that specific signal
+    command = "$setupSignalADC/1/75/1#%" #0=signal index 0 / 50 = number values to record before stopping / 1 = time between samples in miliseconds
+    ser.write(command.encode())  # Send the command
+
+    time.sleep(0.2)
+    #Now start recording 
+    command = "$startSignal/1#%" #0 = signal index 0
+    ser.write(command.encode())  # Send the command
+    time.sleep(0.01)
+    #Now start writing the DAC signal
+    command = "$startSignal/0#%" #0 = signal index 0
+    ser.write(command.encode())  # Send the command
+
+    time.sleep(0.2) # The full record should take 99*2 ~200ms so we wait for 0.2s to make sure it has finished.
+
+    # command = "$stopSignal/0#%" #0 = signal index 0 (stop recording) Note this would do nothing if we have not had a repeating signal that has finished recording.
+    # ser.write(command.encode())  # Send the command
+
+
+    # time.sleep(0.5) #Wait for a bit to make sure it has started recording.
+    #Now get the recorded signal. Note if you dont have a delay above this it might return partially complete signal since it takes time to record.
+    command = "$getSignalADC/1#%" #1 = signal index 1
+    ser.write(command.encode())  # Send the command
+
+    replies = getSerialResponses(2)
+
+    data = [float(x) for x in replies[-1][11:-5].split("/")]
+
+    plt.figure()
+    plt.plot(data)
+    plt.show()
+
 def testSwitches():
     command = "$systemEnable#%" #system can be on for this
     ser.write(command.encode())  # Send the command
@@ -339,6 +394,11 @@ def testDigitalIO():
     ser.write(command.encode())  # Send the command
 
     getSerialResponses(1)
+
+def digitalWrite(channel, value):
+    command = f"$writeDO/{channel}/{value}#%" #Write 1 to first digital output.
+    ser.write(command.encode())  # Send the command
+    getSerialResponses(0.2)
 
 def LEDTest():
     # command = "$factoryReset#%" # DO a factory reset so we clear the EEPROM if needed for calibration.
@@ -510,6 +570,21 @@ def scanI2c():
     ser.write(command.encode())  # Send the command
     getSerialResponses(2.25) # Wait for 0.2 seconds for the reply/s
 
+def setupGPIO(pin, enabled, mode, input_state):
+    
+    #   int arg0 = argGetInt(commandString,0); // which pin
+    #   bool arg1 = argGetBool(commandString,1); // If it is enabled (True) or not (false)
+    #   int arg2 = argGetInt(commandString,2); // Mode, 0= Digital IO, 1 = PWM, 2 = Analog Input
+    #   bool arg3 = argGetBool(commandString,3); // If it is an input (True) or output (false)
+    command = f"$setupGPIO/{pin}/{enabled}/{mode}/{input_state}#%" # pin / enabled / mode / input state
+    ser.write(command.encode())  # Send the command
+    getSerialResponses(0.2)
+
+def writeGPIO(channel, value):
+    command = f"$writeGPIO/{channel}/{value}#%" # Write 1 to first digital output.
+    ser.write(command.encode())  # Send the command
+    getSerialResponses(0.2)
+
 def testMagnetEnable(configure_gpio = False):
 
     if configure_gpio:
@@ -570,7 +645,7 @@ def MagDACSetSequenceTest(channel=4):
     import math
     #DEmo of writing a series of DAC values then getting it to repeat.
     
-    command = f"$setupSignalMode/0/1/3/{channel}#%" #0 = signal index / 1 = repeat / 1= DAC / 1 = channel 1
+    command = f"$setupSignalMode/0/1/3/{channel}#%" #0 = signal index / 1 = repeat / 3= MagnetDAC / 1 = channel 1
     ser.write(command.encode())  # Send the command
 
     # command = "$setupSignalDAC/0/4/0.1/2/1.0/3/0.5/2/0.3/3#%" #0=signal index 0 / 4 = number of voltage/timing pairs we are going to send. / 0.1 = first voltage / 2 = first time in ms / 1.0 second voltage / 3 = second time in ms .... and so on
@@ -610,9 +685,54 @@ def MagDACSetSequenceTest(channel=4):
 
 disableSystem()
 attachMagnetBoard()
+setupGPIO(30, 1, 0, 0)
+setupGPIO(29, 1, 0, 0)
+
 enableSystem()
 # scanI2c()
 setupMagnetBoard()
+time.sleep(1) # Why is this needed???
+
+
+print("Write 29 = 1 (Magnet Enable)")
+writeGPIO(29, 1)
+time.sleep(1)
+
+ADCReadSingleTest(1, 2)
+# time.sleep(1)
+ADCReadSingleTest(2, 2)
+
+# print("Write d30 = 0")
+# writeGPIO(30, 0)
+# time.sleep(0.1)
+# DACSetSingleTest(channel=2, voltage=0.0)
+# time.sleep(0.1)
+# DACSetSingleTest(channel=3, voltage=0.0)
+
+# Setting Magnet DAC 3 = 3.3/2 V sets magnet to ~ 0 Amps
+# Need to write a callibration routine to be sure
+# singleWriteMagnetDAC(3, vout)
+
+# import numpy as np
+# time.sleep(0.5)
+# for vout in np.linspace(1.6544-0.0001, 1.6544+0.0001, 10): 
+#     print("Write DAC 3 = ", vout)
+#     singleWriteMagnetDAC(3, vout)
+#     time.sleep(0.2)
+
+# time.sleep(0.1)
+# singleWriteMagnetDAC(2, 0.5)
+# time.sleep(0.1)
+# singleWriteMagnetDAC(3, 3.2)
+# time.sleep(1)
+# print("Write d30 = 1")
+# writeGPIO(30, 1)
+# time.sleep(1)
+# print("Write d30 = 0")
+# writeGPIO(30, 0)
+# time.sleep(1)
+
+# magDACSetADCReadTest(dac=8)
 # time.sleep(1)
 # singleWriteMagnetDAC(1, 0)
 # time.sleep(1)
@@ -620,12 +740,12 @@ setupMagnetBoard()
 # time.sleep(1)
 # singleWriteMagnetDAC(1, 0)
 # time.sleep(1)
-# MagDACSetSequenceTest(1)
+# MagDACSetSequenceTest(7)
 disableSystem()
 # testMagnetEnable()
 # enableSystem()
 # time.sleep(0.5)
-# ADCReadSingleTest()
+ADCReadSingleTest()
 # ADCReadSequenceTest()
 # DACSetSingleTest()l
 # DACSetSequenceTest()

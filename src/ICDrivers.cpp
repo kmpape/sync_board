@@ -96,6 +96,12 @@ void I2CScan(){
         Serial.println("Done.\n");
 }
 
+uint8_t checkForDevice(int address) {
+    // Checks if a device is present at a given I2C address.
+    Wire.beginTransmission(address);
+    return Wire.endTransmission();
+}
+
 void I2CRead(int address, byte* buffer, size_t bytes_to_read){
     // Read several bytes from I2C and you will then need to read them out of your buffer.
   
@@ -421,15 +427,6 @@ void setupLEDDACI2C(bool turnOn = false){
     setupDACI2C(LED_DAC_ADR, turnOn);
 }
 
-void setupMagDACI2C(bool turnOn = false){
-    //This is to set up AD5669 on the Magnet board. It is a 16 bit DAC with 8 channels controlled by I2C.
-    if (MagAttached == false) {
-        raiseError("You tried to set up the DAC on the Magnet board but it is not attached. You should check your hardware and connections.");
-        return;
-    }
-    setupDACI2C(MagBoard_DAC_ADR, turnOn);
-}
-
 uint16_t readADCOnce(int channel, bool internal = false,  int ADC_ID = 0){
     
     uint8_t ADC_address;
@@ -437,8 +434,10 @@ uint16_t readADCOnce(int channel, bool internal = false,  int ADC_ID = 0){
         ADC_address = SyncBoard_ADC_ADR;
     } else if (ADC_ID == 1){
         ADC_address = LED_ADC_ADR;
+    } else if (ADC_ID == 2){
+        ADC_address = MagBoard_ADC_ADR;
     } else {
-        raiseError("You tried to read from an ADC with ID "+String(ADC_ID)+" but that is not a valid ID. It should be 0 or 1.");
+        raiseError("You tried to read from an ADC with ID "+String(ADC_ID)+" but that is not a valid ID. It should be 0, 1 or 2.");
         return 0;
     }
     
