@@ -652,7 +652,8 @@ def MagDACSetSequenceTest(channel=4):
     # command = "$setupSignalDAC/0/4/0.1/0.01/3.1/0.01/0.1/0.01/3.1/0.01#%"  #This is to test fast speed 10us transition square wave,
     
     N = 80
-    sequence = "/".join([f"{1 + math.sin(2*math.pi*i/N):.2f}/0.1" for i in range(N)])
+    dT = 20
+    sequence = "/".join([f"{3.3/2 + 0.3 * round(math.sin(2*math.pi*i/N), 2):.2f}/{dT}" for i in range(N)])
     command = f"$setupSignalDAC/0/{N}/" + sequence + "#%"
 
     # Note for above the data (voltage) is in Volts and the timings are in miliseconds. A pair like 0.1/2/ would mean 0.1 volts for 2ms. 
@@ -664,43 +665,80 @@ def MagDACSetSequenceTest(channel=4):
     command = "$startSignal/0#%" #0 = signal index 0
     ser.write(command.encode())  # Send the command
 
-    time.sleep(3)
+    time.sleep(N * dT/1000) 
     command = "$stopSignal/0#%" #0 = signal index 0 (stop recording) Note this would do nothing if we have not had a repeating signal that has finished recording.
     ser.write(command.encode())  # Send the command
 
     getSerialResponses(5)
 
-# Time received: 218213.5055261 Reply: I2C device found at address 0x08  !
-# Time received: 218213.5124406 Reply: I2C device found at address 0x4A  !
-# Time received: 218213.5135137 Reply: I2C device found at address 0x54  !
-
-# 0x54 in binary is 01010100
-# 0x4A in binary is 01001010
-
-# 0x08 in binary is 00001000
-# 0x88 # 10001000
-
-# 0xCA # 11001010
-# 0xD4 # 11010100
+def callibrateMagnet():
+    command = "$callibrateMagnet#%" # Callibrate the magnet
+    ser.write(command.encode())  # Send the command
+    getSerialResponses(6) # Wait for 0.2 seconds for the reply/s
 
 disableSystem()
-attachMagnetBoard()
-setupGPIO(30, 1, 0, 0)
 setupGPIO(29, 1, 0, 0)
-
+setupGPIO(30, 1, 0, 0)
+attachMagnetBoard()
 enableSystem()
-# scanI2c()
 setupMagnetBoard()
-time.sleep(1) # Why is this needed???
+getSerialResponses(1)
 
+writeGPIO(30, 0) # set magnet toggle to NC => DAC3
+# singleWriteMagnetDAC(2, 3.3/2)
+print("Set Magnet DAC 3 = 1.628")
+input("Enter to continue...")
+singleWriteMagnetDAC(3, 1.6239)
+
+callibrateMagnet()
+# time.sleep(1)
 
 print("Write 29 = 1 (Magnet Enable)")
+input("Enter to continue...")
 writeGPIO(29, 1)
-time.sleep(1)
 
-ADCReadSingleTest(1, 2)
+input("Start sequence... Enter to continue...")
+MagDACSetSequenceTest(3)
+
+# while (v := input("Enter voltage or q to quit: ")) != "q":
+#     try:
+#         v = float(v)
+#     except ValueError:
+#         print("Invalid input")
+#         continue
+#     singleWriteMagnetDAC(3, v)
+
+# import numpy as np
+# for v in np.linspace(1.6308-0.001, 1.6308+0.001, 100):
+#     print("Write DAC 3 = ", v)
+#     singleWriteMagnetDAC(3, v)
+#     time.sleep(0.1)
+
+# print("Write 29 = 1 (Magnet Disable)")
+# writeGPIO(29, 0)
 # time.sleep(1)
-ADCReadSingleTest(2, 2)
+
+disableSystem()
+
+
+# disableSystem()
+# attachMagnetBoard()
+# setupGPIO(30, 1, 0, 0)
+# setupGPIO(29, 1, 0, 0)
+
+# enableSystem()
+# scanI2c()
+# setupMagnetBoard()
+# time.sleep(1) # Why is this needed???
+
+
+# print("Write 29 = 1 (Magnet Enable)")
+# writeGPIO(29, 1)
+# time.sleep(1)
+
+# ADCReadSingleTest(1, 2)
+# time.sleep(1)
+# ADCReadSingleTest(2, 2)
 
 # print("Write d30 = 0")
 # writeGPIO(30, 0)
@@ -741,11 +779,11 @@ ADCReadSingleTest(2, 2)
 # singleWriteMagnetDAC(1, 0)
 # time.sleep(1)
 # MagDACSetSequenceTest(7)
-disableSystem()
+# disableSystem()
 # testMagnetEnable()
 # enableSystem()
 # time.sleep(0.5)
-ADCReadSingleTest()
+# ADCReadSingleTest()
 # ADCReadSequenceTest()
 # DACSetSingleTest()l
 # DACSetSequenceTest()

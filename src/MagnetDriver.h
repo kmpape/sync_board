@@ -1,5 +1,7 @@
 // MagnetDriver.h
 #pragma once
 
+void attachMagnetBoard();
+void callibrateMagnet();
 void setupMagnetBoard();
-uint8_t singleReadMagnetADC(uint8_t channel);
+float singleReadMagnetADC(uint8_t channel);

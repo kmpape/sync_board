@@ -535,6 +535,7 @@ void executeSerialCommand(String command, String commandString){
                 return;
               }
               bool MagnetPresent = argGetBool(commandString,0); // If the Magnet is present or not.
+              attachMagnetBoard();
               MagAttached = MagnetPresent; //Set to value of whatever the user sent.
   } else if (command == "setupSignalMode"){
               ///Used to set up a dynamic signal mode. Note it will not do anything if systemEnable is true. We CAN do this why system is enabled, but not while a signal is active.
@@ -1130,6 +1131,8 @@ void executeSerialCommand(String command, String commandString){
     int channel = argGetInt(commandString,0); // Get the first argument from the serial input
     float value = argGetFloat(commandString,1); // Get the first argument from the serial input
     setMagDACI2C(channel, value);
+  } else if (command == "callibrateMagnet") {
+    callibrateMagnet();
   } else {
     raiseError("Command "+command+" not recognised");
   }
