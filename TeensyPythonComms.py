@@ -98,14 +98,15 @@ def setupImageSequence(ImageActive, LEDChoice, ExposureTime = None,FilterWheelCh
 
 
 
-def getSerialResponses(time_responding):
+def getSerialResponses(time_responding, print_output=True):
 
     replies = []
     start_time = time.perf_counter()
     while time.perf_counter() - start_time < time_responding:
         if ser.in_waiting > 0:
             reply = ser.readline().decode()  # Read the reply
-            print("Time received: {:.7f}".format(time.perf_counter()) + " Reply: " + reply)
+            if print_output:
+                print("Time received: {:.7f}".format(time.perf_counter()) + " Reply: " + reply)
             replies.append(reply)
     return replies
 
@@ -357,10 +358,10 @@ def magDACSetADCReadTest(adc=3, dac=8):
 
     replies = getSerialResponses(2)
 
-    data = [float(x) for x in replies[-1][11:-5].split("/")]
+    pts = [float(x) for x in replies[-1][11:-5].split("/")]
 
     plt.figure()
-    plt.plot(data)
+    plt.plot(pts)
     plt.show()
 
 def testSwitches():
@@ -676,50 +677,101 @@ def callibrateMagnet():
     ser.write(command.encode())  # Send the command
     getSerialResponses(6) # Wait for 0.2 seconds for the reply/s
 
+def measureMagnetZeroCurrent():
+    import numpy as np
+
+    disableSystem()
+    input("Unplug the magnet, then press enter to continue...")
+    attachMagnetBoard()
+    enableSystem()
+    setupMagnetBoard()
+
+    #Set up the ADC
+    command = f"$setupSignalMode/0/0/4/1#%" # 0 = signal index / 0 = not repeat / 4 = MagADC / 1 = channel 1
+    ser.write(command.encode())  # Send the command
+
+    #Next we set up that specific signal
+    command = "$setupSignalADC/0/100/1#%" #0=signal index 0 / 50 = number values to record before stopping / 1 = time between samples in miliseconds
+    ser.write(command.encode())  # Send the command
+
+    command = "$startSignal/0#%" #0 = signal index 0
+    ser.write(command.encode())  # Send the command
+
+    time.sleep(0.5) # The full record should take 50*1 ~50ms, wait 10x this long to make sure signal is recorded
+
+    # Now get the recorded signal. Note if you dont have a delay above this it might return partially complete signal since it takes time to record.
+    command = "$getSignalADC/0#%" # 1 = signal index 1
+    ser.write(command.encode())   # Send the command
+
+    replies = getSerialResponses(2, print_output=False)
+
+    pts = np.array([float(x) for x in replies[-1][11:-5].split("/")]) # Always returns 100 points
+
+    print(f"0A voltage = {pts.mean():.4f} +/- {pts.std()}")
+
+    disableSystem()    
+
+# measureMagnetZeroCurrent()
+
 disableSystem()
-setupGPIO(29, 1, 0, 0)
-setupGPIO(30, 1, 0, 0)
 attachMagnetBoard()
 enableSystem()
 setupMagnetBoard()
-getSerialResponses(1)
-
-writeGPIO(30, 0) # set magnet toggle to NC => DAC3
-# singleWriteMagnetDAC(2, 3.3/2)
-print("Set Magnet DAC 3 = 1.628")
-input("Enter to continue...")
-singleWriteMagnetDAC(3, 1.6239)
-
 callibrateMagnet()
-# time.sleep(1)
-
-print("Write 29 = 1 (Magnet Enable)")
-input("Enter to continue...")
-writeGPIO(29, 1)
-
-input("Start sequence... Enter to continue...")
-MagDACSetSequenceTest(3)
-
-# while (v := input("Enter voltage or q to quit: ")) != "q":
-#     try:
-#         v = float(v)
-#     except ValueError:
-#         print("Invalid input")
-#         continue
-#     singleWriteMagnetDAC(3, v)
-
-# import numpy as np
-# for v in np.linspace(1.6308-0.001, 1.6308+0.001, 100):
-#     print("Write DAC 3 = ", v)
-#     singleWriteMagnetDAC(3, v)
-#     time.sleep(0.1)
-
-# print("Write 29 = 1 (Magnet Disable)")
-# writeGPIO(29, 0)
-# time.sleep(1)
-
 disableSystem()
 
+# while(True):
+#     # channel = 3 -> Hall 1
+#     # ID = 2 -> magnet board
+#     ADCReadSingleTest(3, 2)
+#     time.sleep(0.5)
+
+# Run when the user keyboard interrupts the program
+
+
+# disableSystem()
+# # setupGPIO(29, 1, 0, 0)
+# # setupGPIO(30, 1, 0, 0)
+# attachMagnetBoard()
+# enableSystem()
+# setupMagnetBoard()
+# getSerialResponses(1)
+
+# # writeGPIO(30, 0) # set magnet toggle to NC => DAC3
+# # # singleWriteMagnetDAC(2, 3.3/2)
+# # print("Set Magnet DAC 3 = 1.628")
+# # input("Enter to continue...")
+# # singleWriteMagnetDAC(3, 1.6239)
+
+# # callibrateMagnet()
+# # time.sleep(1)
+
+# # print("Write 29 = 1 (Magnet Enable)")
+# # input("Enter to continue...")
+# # writeGPIO(29, 1)
+
+# # input("Start sequence... Enter to continue...")
+# # MagDACSetSequenceTest(3)
+
+# # while (v := input("Enter voltage or q to quit: ")) != "q":
+# #     try:
+# #         v = float(v)
+# #     except ValueError:
+# #         print("Invalid input")
+# #         continue
+# #     singleWriteMagnetDAC(3, v)
+
+# # import numpy as np
+# # for v in np.linspace(1.6308-0.001, 1.6308+0.001, 100):
+# #     print("Write DAC 3 = ", v)
+# #     singleWriteMagnetDAC(3, v)
+# #     time.sleep(0.1)
+
+# # print("Write 29 = 1 (Magnet Disable)")
+# # writeGPIO(29, 0)
+# # time.sleep(1)
+
+# disableSystem()
 
 # disableSystem()
 # attachMagnetBoard()

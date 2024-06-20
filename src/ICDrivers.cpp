@@ -6,6 +6,7 @@
 #include <SPI.h>
 #include <Wire.h>
 #include "digitalWriteFast.h"
+#include "MagnetDriver.h"
 
 ////Address book. Naming is Board_Device_ADR
 //I2C
@@ -387,6 +388,10 @@ void setMagDACI2C(int channel, float value) {
     //This is to send valules to AD5669 on the Magnet board.
     if (MagAttached == false){
         raiseError("You tried to set the DAC on the Magnet board but it is not attached. You should check your hardware and connections.");
+        return;
+    }
+    if (MagDAC_Enabled == false) {
+        raiseError("You tried to set the DAC on the Magnet board but the Magnet DAC has not been enabled.");
         return;
     }
     setDACI2C(MagBoard_DAC_ADR, channel, value);

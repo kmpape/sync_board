@@ -7,14 +7,14 @@
 #include "IOController.h"
 #include <digitalWriteFast.h>
 
-bool adcEnabled = false;
-bool dacEnabled = false;
-bool magEnabled = false;
+bool MagADC_Enabled = false;
+bool MagDAC_Enabled = false;
 
-const int V_CURRENT_ID = 1;
-const int V_COIL_ID = 2;
+const int V_CURRENT_CH = 1;
+const int V_COIL_CH = 2;
 
 bool  magnet_calibrated = false;
+float zero_current_voltage = 1.6502;
 float magnet_current_voltage_slope_NC = 1.0; // Check this value
 float magnet_current_voltage_intercept_NC = 1.65; // x-intercept of the line of best fit. i.e the voltage at 0A
 float magnet_current_voltage_slope_NO = 1.0; // Check this value
@@ -22,8 +22,9 @@ float magnet_current_voltage_intercept_NO = 1.65; // x-intercept of the line of 
 const int callibration_pts = 20; // Number of points to take for callibration
 const int callibration_avg = 20; // Number of points to average for each callibration point
 
-const int MAG_DAC_NO_ID = 2;
-const int MAG_DAC_NC_ID = 3;
+const int MAG_DAC_RELAY_CH = 1;
+const int MAG_DAC_NO_CH = 2;
+const int MAG_DAC_NC_CH = 3;
 
 // Called before system enabled
 void attachMagnetBoard() {
@@ -52,14 +53,22 @@ void setupMagnetBoard() {
     if (checkForDevice(MagBoard_ADC_ADR) != 0) {
         raiseError("MagnetBoard: No ADC detected at address 0x"+String(MagBoard_ADC_ADR, HEX));
     } else {
-        adcEnabled = true;
+        MagADC_Enabled = true;
     }
 
     if (checkForDevice(MagBoard_DAC_ADR) != 0) {
         raiseError("MagnetBoard: No DAC detected at address 0x"+String(MagBoard_DAC_ADR, HEX));
     } else {
         setupDACI2C(MagBoard_DAC_ADR, true);
-        dacEnabled = true;
+        MagDAC_Enabled = true;
+    }
+}
+
+void switchMagnetRelay(bool closed) {
+    if (closed == true) {
+        setMagDACI2C(MAG_DAC_RELAY_CH, 0.0);
+    } else {
+        setMagDACI2C(MAG_DAC_RELAY_CH, 3.3);
     }
 }
 
@@ -68,11 +77,11 @@ void enableMagnet(bool enable = false) {
         raiseError("MagnetBoard: No Magnet Board Attached");
         return;
     }
-    if (dacEnabled == false) {
+    if (MagDAC_Enabled == false) {
         raiseError("MagnetBoard: DAC not enabled. Enable it using setupMagnetBoard()");
         return;
     }
-    if (adcEnabled == false) {
+    if (MagADC_Enabled == false) {
         raiseError("MagnetBoard: ADC not enabled. Enable it using setupMagnetBoard()");
         return;
     }
@@ -88,7 +97,7 @@ void switchMagnetOutput(bool NC = true) {
         raiseError("MagnetBoard: No Magnet Board Attached");
         return;
     }
-    if (dacEnabled == false) {
+    if (MagDAC_Enabled == false) {
         raiseError("MagnetBoard: DAC not enabled. Enable it using setupMagnetBoard()");
         return;
     }
@@ -101,6 +110,21 @@ void switchMagnetOutput(bool NC = true) {
 
 void callibrateMagnet() {
     enableMagnet(true);
+    
+    switchMagnetRelay(false); // Set relay to open for zero current calibration
+    delay(100);
+
+    zero_current_voltage = 0.0;
+    for(int j = 0; j < callibration_avg; j++) {            
+        zero_current_voltage += readADC(V_CURRENT_CH, 2);
+        delay(10);
+    }
+    zero_current_voltage /= callibration_avg;
+
+    Serial.println("MagnetBoard: Zero-current calibration complete. Zero current voltage = "+String(zero_current_voltage, 4));
+
+    switchMagnetRelay(true);
+    delay(100);
 
     // First callibrate DAC3 (NC)
     switchMagnetOutput(true);
@@ -112,12 +136,12 @@ void callibrateMagnet() {
     float start_voltage = 1.64;
     float end_voltage   = 1.67;
 
-    setMagDACI2C(MAG_DAC_NC_ID, start_voltage);
+    setMagDACI2C(MAG_DAC_NC_CH, start_voltage);
     delay(1000);
 
     for (int i = 0; i < callibration_pts; i++) {
         voltage[i] = start_voltage + (end_voltage-start_voltage)*i/(((float)callibration_pts)-1);
-        setMagDACI2C(MAG_DAC_NC_ID, voltage[i]);
+        setMagDACI2C(MAG_DAC_NC_CH, voltage[i]);
             
         //Now we do a Heartbeat trigger since this long calibration functionc an oherwise crash the heartbeat.
         digitalWriteFast(Heartbeat, LOW);
@@ -128,7 +152,7 @@ void callibrateMagnet() {
         delay(3);
 
         for(int j = 0; j < callibration_avg; j++) {            
-            current[i] += singleReadMagnetADC(V_CURRENT_ID);
+            current[i] += singleReadMagnetADC(V_CURRENT_CH);
         }
         current[i] /= ((float)callibration_avg);
         // Serial.println(String(voltage[i], 4)+","+String(current[i], 4));
@@ -168,12 +192,12 @@ void callibrateMagnet() {
     voltage[callibration_pts] = {0};
     current[callibration_pts] = {0};
 
-    setMagDACI2C(MAG_DAC_NO_ID, start_voltage);
+    setMagDACI2C(MAG_DAC_NO_CH, start_voltage);
     delay(1000);
 
     for (int i = 0; i < callibration_pts; i++) {
         voltage[i] = start_voltage + (end_voltage-start_voltage)*i/(((float)callibration_pts)-1);
-        setMagDACI2C(MAG_DAC_NO_ID, voltage[i]);
+        setMagDACI2C(MAG_DAC_NO_CH, voltage[i]);
             
         //Now we do a Heartbeat trigger since this long calibration functionc an oherwise crash the heartbeat.
         digitalWriteFast(Heartbeat, LOW);
@@ -184,7 +208,7 @@ void callibrateMagnet() {
         delay(3);
 
         for(int j = 0; j < callibration_avg; j++) {            
-            current[i] += singleReadMagnetADC(V_CURRENT_ID);
+            current[i] += singleReadMagnetADC(V_CURRENT_CH);
         }
         current[i] /= ((float)callibration_avg);
         // Serial.println(String(voltage[i], 4)+","+String(current[i], 4));
@@ -218,12 +242,30 @@ void callibrateMagnet() {
     magnet_calibrated = true;    
 }
 
+// current is from -1.65 to 1.65 with 0 well calibrated but do not know (yet) what the slope corresponds to
+void setMagnetCurrent(bool NC, float current) {
+    if (magnet_calibrated == false) {
+        raiseError("MagnetBoard: Tried to set magnet current but magnet is uncallibrated!");
+        return;
+    }
+    float voltage;
+    uint8_t CH;
+    if (NC) {
+        voltage = (current + zero_current_voltage - magnet_current_voltage_intercept_NC);
+        CH = MAG_DAC_NC_CH;
+    } else {
+        voltage = magnet_current_voltage_slope_NO * (current + zero_current_voltage - magnet_current_voltage_intercept_NO);
+        CH = MAG_DAC_NO_CH;
+    }
+    setMagDACI2C(CH, voltage);
+}
+
 float singleReadMagnetADC(uint8_t channel) {
     if (MagAttached == false) {
         raiseError("MagnetBoard: No Magnet Board Attached");
         return 0;
     }
-    if (adcEnabled == false) {
+    if (MagADC_Enabled == false) {
         raiseError("MagnetBoard: ADC not enabled. Enable it using setupMagnetBoard()");
         return 0;
     }
@@ -231,5 +273,5 @@ float singleReadMagnetADC(uint8_t channel) {
         raiseError("MagnetBoard: Tried to read from invalid ADC channel "+String(channel)+".");
         return 0;
     }
-    return readADC(channel, 2) - 1.65;
+    return readADC(channel, 2) - zero_current_voltage;
 }

@@ -7,4 +7,5 @@ extern bool MagAttached; // defined in main.cpp
 extern int syncMode; // defined in main.cpp
 extern bool debugmode; // defined in main.cpp
 extern int NumberLEDsBeingTimed; // defined in main.cpp
-
+extern bool MagADC_Enabled;
+extern bool MagDAC_Enabled;
