@@ -1131,8 +1131,8 @@ void executeSerialCommand(String command, String commandString){
     int channel = argGetInt(commandString,0); // Get the first argument from the serial input
     float value = argGetFloat(commandString,1); // Get the first argument from the serial input
     setMagDACI2C(channel, value);
-  } else if (command == "callibrateMagnet") {
-    callibrateMagnet();
+  } else if (command == "calibrateMagnet") {
+    calibrateMagnet();
   } else {
     raiseError("Command "+command+" not recognised");
   }

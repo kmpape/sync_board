@@ -19,8 +19,8 @@ float magnet_current_voltage_slope_NC = 1.0; // Check this value
 float magnet_current_voltage_intercept_NC = 1.65; // x-intercept of the line of best fit. i.e the voltage at 0A
 float magnet_current_voltage_slope_NO = 1.0; // Check this value
 float magnet_current_voltage_intercept_NO = 1.65; // x-intercept of the line of best fit. i.e the voltage at 0A
-const int callibration_pts = 20; // Number of points to take for callibration
-const int callibration_avg = 20; // Number of points to average for each callibration point
+const int calibration_pts = 20; // Number of points to take for calibration
+const int calibration_avg = 20; // Number of points to average for each calibration point
 
 const int MAG_DAC_RELAY_CH = 1;
 const int MAG_DAC_NO_CH = 2;
@@ -108,30 +108,30 @@ void switchMagnetOutput(bool NC = true) {
     }
 }
 
-void callibrateMagnet() {
+void calibrateMagnet() {
     enableMagnet(true);
     
     switchMagnetRelay(false); // Set relay to open for zero current calibration
     delay(100);
 
     zero_current_voltage = 0.0;
-    for(int j = 0; j < callibration_avg; j++) {            
+    for(int j = 0; j < calibration_avg; j++) {            
         zero_current_voltage += readADC(V_CURRENT_CH, 2);
         delay(10);
     }
-    zero_current_voltage /= callibration_avg;
+    zero_current_voltage /= calibration_avg;
 
     Serial.println("MagnetBoard: Zero-current calibration complete. Zero current voltage = "+String(zero_current_voltage, 4));
 
     switchMagnetRelay(true);
     delay(100);
 
-    // First callibrate DAC3 (NC)
+    // First calibrate DAC3 (NC)
     switchMagnetOutput(true);
 
     // Record the current voltage curve around 0A
-    float voltage[callibration_pts] = {0};
-    float current[callibration_pts] = {0};
+    float voltage[calibration_pts] = {0};
+    float current[calibration_pts] = {0};
 
     float start_voltage = 1.64;
     float end_voltage   = 1.67;
@@ -139,8 +139,8 @@ void callibrateMagnet() {
     setMagDACI2C(MAG_DAC_NC_CH, start_voltage);
     delay(1000);
 
-    for (int i = 0; i < callibration_pts; i++) {
-        voltage[i] = start_voltage + (end_voltage-start_voltage)*i/(((float)callibration_pts)-1);
+    for (int i = 0; i < calibration_pts; i++) {
+        voltage[i] = start_voltage + (end_voltage-start_voltage)*i/(((float)calibration_pts)-1);
         setMagDACI2C(MAG_DAC_NC_CH, voltage[i]);
             
         //Now we do a Heartbeat trigger since this long calibration functionc an oherwise crash the heartbeat.
@@ -151,10 +151,10 @@ void callibrateMagnet() {
         digitalWriteFast(Heartbeat, LOW);
         delay(3);
 
-        for(int j = 0; j < callibration_avg; j++) {            
+        for(int j = 0; j < calibration_avg; j++) {            
             current[i] += singleReadMagnetADC(V_CURRENT_CH);
         }
-        current[i] /= ((float)callibration_avg);
+        current[i] /= ((float)calibration_avg);
         // Serial.println(String(voltage[i], 4)+","+String(current[i], 4));
     }
 
@@ -163,40 +163,40 @@ void callibrateMagnet() {
     float sum_y = 0;
     float sum_xy = 0;
     float sum_x2 = 0;
-    for (int i = 0; i < callibration_pts; i++) {
+    for (int i = 0; i < calibration_pts; i++) {
         sum_x += voltage[i];
         sum_y += current[i];
         sum_xy += voltage[i]*current[i];
         sum_x2 += voltage[i]*voltage[i];
     }
-    magnet_current_voltage_slope_NC = (((float)callibration_pts)*sum_xy - sum_x*sum_y)/(((float)callibration_pts)*sum_x2 - sum_x*sum_x);
-    float intercept = (sum_y - magnet_current_voltage_slope_NC*sum_x)/((float)callibration_pts);
+    magnet_current_voltage_slope_NC = (((float)calibration_pts)*sum_xy - sum_x*sum_y)/(((float)calibration_pts)*sum_x2 - sum_x*sum_x);
+    float intercept = (sum_y - magnet_current_voltage_slope_NC*sum_x)/((float)calibration_pts);
     magnet_current_voltage_intercept_NC = -intercept/magnet_current_voltage_slope_NC;
 
     enableMagnet(false);
 
     if (magnet_current_voltage_intercept_NC <= 1.6 || magnet_current_voltage_intercept_NC >= 1.7) {
-        raiseError("MagnetBoard: Callibration of DAC3 failed. Intercept = "+String(magnet_current_voltage_intercept_NC, 4)+"V");
+        raiseError("MagnetBoard: calibration of DAC3 failed. Intercept = "+String(magnet_current_voltage_intercept_NC, 4)+"V");
         return;
     }
 
-    Serial.println("MagnetBoard: Callibration of DAC3 complete. Slope = "+String(magnet_current_voltage_slope_NC)+", y-intercept = "+String(intercept)+", 0A occurs at "+String(magnet_current_voltage_intercept_NC, 4)+"V");
+    Serial.println("MagnetBoard: calibration of DAC3 complete. Slope = "+String(magnet_current_voltage_slope_NC)+", y-intercept = "+String(intercept)+", 0A occurs at "+String(magnet_current_voltage_intercept_NC, 4)+"V");
 
     delay(100);
     enableMagnet(true);
 
-    // Now callibrate DAC2 (NO)
+    // Now calibrate DAC2 (NO)
     switchMagnetOutput(false);
 
     // Record the current voltage curve around 0A
-    voltage[callibration_pts] = {0};
-    current[callibration_pts] = {0};
+    voltage[calibration_pts] = {0};
+    current[calibration_pts] = {0};
 
     setMagDACI2C(MAG_DAC_NO_CH, start_voltage);
     delay(1000);
 
-    for (int i = 0; i < callibration_pts; i++) {
-        voltage[i] = start_voltage + (end_voltage-start_voltage)*i/(((float)callibration_pts)-1);
+    for (int i = 0; i < calibration_pts; i++) {
+        voltage[i] = start_voltage + (end_voltage-start_voltage)*i/(((float)calibration_pts)-1);
         setMagDACI2C(MAG_DAC_NO_CH, voltage[i]);
             
         //Now we do a Heartbeat trigger since this long calibration functionc an oherwise crash the heartbeat.
@@ -207,10 +207,10 @@ void callibrateMagnet() {
         digitalWriteFast(Heartbeat, LOW);
         delay(3);
 
-        for(int j = 0; j < callibration_avg; j++) {            
+        for(int j = 0; j < calibration_avg; j++) {            
             current[i] += singleReadMagnetADC(V_CURRENT_CH);
         }
-        current[i] /= ((float)callibration_avg);
+        current[i] /= ((float)calibration_avg);
         // Serial.println(String(voltage[i], 4)+","+String(current[i], 4));
     }
 
@@ -219,24 +219,24 @@ void callibrateMagnet() {
     sum_y = 0;
     sum_xy = 0;
     sum_x2 = 0;
-    for (int i = 0; i < callibration_pts; i++) {
+    for (int i = 0; i < calibration_pts; i++) {
         sum_x += voltage[i];
         sum_y += current[i];
         sum_xy += voltage[i]*current[i];
         sum_x2 += voltage[i]*voltage[i];
     }
-    magnet_current_voltage_slope_NO = (((float)callibration_pts)*sum_xy - sum_x*sum_y)/(((float)callibration_pts)*sum_x2 - sum_x*sum_x);
-    intercept = (sum_y - magnet_current_voltage_slope_NO*sum_x)/((float)callibration_pts);
+    magnet_current_voltage_slope_NO = (((float)calibration_pts)*sum_xy - sum_x*sum_y)/(((float)calibration_pts)*sum_x2 - sum_x*sum_x);
+    intercept = (sum_y - magnet_current_voltage_slope_NO*sum_x)/((float)calibration_pts);
     magnet_current_voltage_intercept_NO = -intercept/magnet_current_voltage_slope_NO;
 
     enableMagnet(false);
 
     if (magnet_current_voltage_intercept_NO <= 1.6 || magnet_current_voltage_intercept_NO >= 1.7) {
-        raiseError("MagnetBoard: Callibration of DAC2 failed. Intercept = "+String(magnet_current_voltage_intercept_NO, 4)+"V");
+        raiseError("MagnetBoard: calibration of DAC2 failed. Intercept = "+String(magnet_current_voltage_intercept_NO, 4)+"V");
         return;
     }
 
-    Serial.println("MagnetBoard: Callibration of DAC2 complete. Slope = "+String(magnet_current_voltage_slope_NO)+", y-intercept = "+String(intercept)+", 0A occurs at "+String(magnet_current_voltage_intercept_NO, 4)+"V");
+    Serial.println("MagnetBoard: calibration of DAC2 complete. Slope = "+String(magnet_current_voltage_slope_NO)+", y-intercept = "+String(intercept)+", 0A occurs at "+String(magnet_current_voltage_intercept_NO, 4)+"V");
 
     switchMagnetOutput(true);
     magnet_calibrated = true;    
@@ -245,7 +245,7 @@ void callibrateMagnet() {
 // current is from -1.65 to 1.65 with 0 well calibrated but do not know (yet) what the slope corresponds to
 void setMagnetCurrent(bool NC, float current) {
     if (magnet_calibrated == false) {
-        raiseError("MagnetBoard: Tried to set magnet current but magnet is uncallibrated!");
+        raiseError("MagnetBoard: Tried to set magnet current but magnet is uncalibrated!");
         return;
     }
     float voltage;

@@ -672,8 +672,8 @@ def MagDACSetSequenceTest(channel=4):
 
     getSerialResponses(5)
 
-def callibrateMagnet():
-    command = "$callibrateMagnet#%" # Callibrate the magnet
+def calibrateMagnet():
+    command = "$calibrateMagnet#%" # calibrate the magnet
     ser.write(command.encode())  # Send the command
     getSerialResponses(6) # Wait for 0.2 seconds for the reply/s
 
@@ -717,7 +717,7 @@ disableSystem()
 attachMagnetBoard()
 enableSystem()
 setupMagnetBoard()
-callibrateMagnet()
+calibrateMagnet()
 disableSystem()
 
 # while(True):
@@ -743,7 +743,7 @@ disableSystem()
 # # input("Enter to continue...")
 # # singleWriteMagnetDAC(3, 1.6239)
 
-# # callibrateMagnet()
+# # calibrateMagnet()
 # # time.sleep(1)
 
 # # print("Write 29 = 1 (Magnet Enable)")
@@ -800,7 +800,7 @@ disableSystem()
 # DACSetSingleTest(channel=3, voltage=0.0)
 
 # Setting Magnet DAC 3 = 3.3/2 V sets magnet to ~ 0 Amps
-# Need to write a callibration routine to be sure
+# Need to write a calibration routine to be sure
 # singleWriteMagnetDAC(3, vout)
 
 # import numpy as np
