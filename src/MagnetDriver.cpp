@@ -7,6 +7,8 @@
 #include "IOController.h"
 #include <digitalWriteFast.h>
 
+const float HALL_ZERO_FIELD = 1.6765869; // THIS IS NOT WELL CALIBRATED !!!
+
 bool MagADC_Enabled = false;
 bool MagDAC_Enabled = false;
 
@@ -21,6 +23,10 @@ float magnet_current_voltage_slope_NO = 1.0; // Check this value
 float magnet_current_voltage_intercept_NO = 1.65; // x-intercept of the line of best fit. i.e the voltage at 0A
 const int calibration_pts = 20; // Number of points to take for calibration
 const int calibration_avg = 20; // Number of points to average for each calibration point
+
+float hall_slope = 0.0;
+float hall_intercept = 0.0;
+bool  hall_calibrated = false;
 
 const int MAG_DAC_RELAY_CH = 1;
 const int MAG_DAC_NO_CH = 2;
@@ -116,7 +122,7 @@ void calibrateMagnet() {
 
     zero_current_voltage = 0.0;
     for(int j = 0; j < calibration_avg; j++) {            
-        zero_current_voltage += readADC(V_CURRENT_CH, 2);
+        zero_current_voltage += singleReadMagnetADC(V_CURRENT_CH);
         delay(10);
     }
     zero_current_voltage /= calibration_avg;
@@ -152,7 +158,7 @@ void calibrateMagnet() {
         delay(3);
 
         for(int j = 0; j < calibration_avg; j++) {            
-            current[i] += singleReadMagnetADC(V_CURRENT_CH);
+            current[i] += singleReadVCurrent();
         }
         current[i] /= ((float)calibration_avg);
         // Serial.println(String(voltage[i], 4)+","+String(current[i], 4));
@@ -208,7 +214,7 @@ void calibrateMagnet() {
         delay(3);
 
         for(int j = 0; j < calibration_avg; j++) {            
-            current[i] += singleReadMagnetADC(V_CURRENT_CH);
+            current[i] += singleReadVCurrent();
         }
         current[i] /= ((float)calibration_avg);
         // Serial.println(String(voltage[i], 4)+","+String(current[i], 4));
@@ -242,22 +248,112 @@ void calibrateMagnet() {
     magnet_calibrated = true;    
 }
 
+// Calibrate using the Hall sensor
+void calibrateHall(int hall_id = 0) {
+    if (magnet_calibrated == false) {
+        raiseError("MagnetBoard: Tried to calibrate magnet using Hall sensor but magnet is uncalibrated!");
+        return;
+    }
+
+    // Measure a range of setpoints then fit a line to the data
+    float current[calibration_pts] = {0};
+    float field[calibration_pts] = {0};
+
+    float start_current = -0.2;
+    float end_current   = 0.2;
+
+    switchMagnetOutput(true); // Set to NC
+    enableMagnet(true);
+    setMagnetCurrent(1, start_current);
+    delay(1000);
+
+    for (int i = 0; i < calibration_pts; i++) {
+        current[i] = start_current + (end_current-start_current)*i/(((float)calibration_pts)-1);
+        setMagnetCurrent(1, current[i]);
+            
+        //Now we do a Heartbeat trigger since this long calibration functionc an oherwise crash the heartbeat.
+        digitalWriteFast(Heartbeat, LOW);
+        delay(3);
+        digitalWriteFast(Heartbeat, HIGH);
+        delay(3);
+        digitalWriteFast(Heartbeat, LOW);
+        delay(3);
+
+        for(int j = 0; j < calibration_avg; j++) {            
+            field[i] += singleReadHall(hall_id);
+        }
+        field[i] /= ((float)calibration_avg);
+        Serial.println(String(current[i], 4)+","+String(field[i], 4));
+    }
+
+    enableMagnet(false);
+
+    // Now we fit a line to the data
+    float sum_x = 0;
+    float sum_y = 0;
+    float sum_xy = 0;
+    float sum_x2 = 0;
+    for (int i = 0; i < calibration_pts; i++) {
+        sum_x += current[i];
+        sum_y += field[i];
+        sum_xy += current[i]*field[i];
+        sum_x2 += current[i]*current[i];
+    }
+    hall_slope = (((float)calibration_pts)*sum_xy - sum_x*sum_y)/(((float)calibration_pts)*sum_x2 - sum_x*sum_x);
+    hall_intercept = (sum_y - hall_slope*sum_x)/((float)calibration_pts);
+    hall_calibrated = true;
+
+    Serial.println("MagnetBoard: calibration using Hall sensor complete. Slope = "+String(hall_slope)+", y-intercept = "+String(hall_intercept));
+}
+
+// Sets the field using the Hall calibration
+void setMagnetField(int NC, float field) {
+    if (hall_calibrated == false) {
+        raiseError("MagnetBoard: Tried to set magnet field but Hall sensor is uncalibrated!");
+        return;
+    }
+    float current = (field - hall_intercept) / hall_slope;
+    setMagnetCurrent(NC, current);
+}
+
 // current is from -1.65 to 1.65 with 0 well calibrated but do not know (yet) what the slope corresponds to
-void setMagnetCurrent(bool NC, float current) {
+void setMagnetCurrent(int NC, float current) {
     if (magnet_calibrated == false) {
         raiseError("MagnetBoard: Tried to set magnet current but magnet is uncalibrated!");
         return;
     }
     float voltage;
     uint8_t CH;
-    if (NC) {
-        voltage = (current + zero_current_voltage - magnet_current_voltage_intercept_NC);
+    if (NC == 1) {
+        voltage = current / magnet_current_voltage_slope_NC + magnet_current_voltage_intercept_NC;
         CH = MAG_DAC_NC_CH;
     } else {
-        voltage = magnet_current_voltage_slope_NO * (current + zero_current_voltage - magnet_current_voltage_intercept_NO);
+        voltage = current / magnet_current_voltage_slope_NO + magnet_current_voltage_intercept_NO;
         CH = MAG_DAC_NO_CH;
     }
     setMagDACI2C(CH, voltage);
+}
+
+// Convert ADC voltage reading to B field in mT
+float ADC_V_to_mT(float Vout) {
+    Vout = (Vout - HALL_ZERO_FIELD) * 1.5; // Undo the zero field offset and voltage divider
+    Vout = Vout * 1000.0 / 6.0; // Convert to Gauss (6 mV / G)
+    Vout = Vout / 10.0; // Convert to mT
+    return Vout;
+}
+
+// Returns Hall sensor reading in mT
+float singleReadHall(uint8_t id) {
+    if (id >= 3 || id < 0) {
+        raiseError("MagnetBoard: Tried to read from invalid Hall sensor "+String(id)+". Must be 0, 1 or 2.");
+        return 0;
+    }
+
+    return ADC_V_to_mT(singleReadMagnetADC(id+3));
+}
+
+float singleReadVCurrent() {
+    return singleReadMagnetADC(V_CURRENT_CH) - zero_current_voltage;
 }
 
 float singleReadMagnetADC(uint8_t channel) {
@@ -273,5 +369,5 @@ float singleReadMagnetADC(uint8_t channel) {
         raiseError("MagnetBoard: Tried to read from invalid ADC channel "+String(channel)+".");
         return 0;
     }
-    return readADC(channel, 2) - zero_current_voltage;
+    return readADC(channel, 2);
 }

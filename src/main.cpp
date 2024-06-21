@@ -17,8 +17,11 @@ enum SIGNALMODE {
   GPIO = 2,
   MAGDAC = 3,
   MAGADC = 4,
+  MAGHALL_READ = 5,  // read the hall sensor in mT
+  MAGCURR_WRITE = 6, // set the magnet current calibrated to 0
+  MAGHALL_WRITE = 7, // set the magnet current in mT based on Hall calibration
 };
-u_int SIGNALMODES = 5; // Remember to update this if updating above enum
+u_int SIGNALMODES = 8; // Remember to update this if updating above enum
 
 // Debug mode and various parameters
 bool debugmode = true; // Set to true to enable debug mode. This will do some extra things. false for normal operation.
@@ -492,12 +495,19 @@ void signalHandler(int signalIndex){
   } else if (signalMode[signalIndex] == SIGNALMODE::MAGADC) {
       float adcValue = readADC(signalOptions[signalIndex], 2); // Read the ADC value of the specified pin in signalOptions
       signalData[signalIndex][index] = adcValue; // Record the ADC value in the buffer.
+  } else if (signalMode[signalIndex] == SIGNALMODE::MAGHALL_READ) {
+      float hallValue = singleReadHall(signalOptions[signalIndex]); // Read the ADC value of the specified pin in signalOptions
+      signalData[signalIndex][index] = hallValue; // Record the ADC value in the buffer.
   } else if (signalMode[signalIndex] == SIGNALMODE::DAC){ // If we are writing DAC
     setDAC(signalOptions[signalIndex], signalData[signalIndex][index]); //Set the DAC value of the specified pin in signalOptions to the value in the signalData.
   } else if (signalMode[signalIndex] == SIGNALMODE::GPIO){ // If we are doing GPIO
     //Todo something if you want to implement signals to GPIO ports.
   } else if (signalMode[signalIndex] == SIGNALMODE::MAGDAC){
     setMagDACI2C(signalOptions[signalIndex], signalData[signalIndex][index]); //Set the DAC value of the specified pin in signalOptions to the value in the signalData.
+  } else if (signalMode[signalIndex] == SIGNALMODE::MAGHALL_WRITE){
+    setMagnetField(signalOptions[signalIndex], signalData[signalIndex][index]); //Set the DAC value of the specified pin in signalOptions to the value in the signalData.
+  } else if (signalMode[signalIndex] == SIGNALMODE::MAGCURR_WRITE){
+    setMagnetCurrent(signalOptions[signalIndex], signalData[signalIndex][index]); //Set the DAC value of the specified pin in signalOptions to the value in the signalData.
   } else {
     raiseError("SignalHandler error - not recognised signal mode");
   }
@@ -579,7 +589,9 @@ void executeSerialCommand(String command, String commandString){
                 return;
               }
               if ((signalMode[sIndex]!=SIGNALMODE::DAC) && 
-                  (signalMode[sIndex]!=SIGNALMODE::MAGDAC)){ // If we arent in DAC mode then we have a problem.
+                  (signalMode[sIndex]!=SIGNALMODE::MAGDAC) && 
+                  (signalMode[sIndex]!=SIGNALMODE::MAGHALL_WRITE) &&
+                  (signalMode[sIndex]!=SIGNALMODE::MAGCURR_WRITE)){ // If we arent in DAC mode then we have a problem.
                 raiseError("Signal mode is not DAC");
                 return;
               }
@@ -626,7 +638,7 @@ void executeSerialCommand(String command, String commandString){
                 raiseError("Number of values you asked DAC to record is out is out of range");
                 return;
               }
-              if ((signalMode[sIndex]!=SIGNALMODE::ADC) && (signalMode[sIndex]!=SIGNALMODE::MAGADC)){ // If we arent in ADC mode then we have a problem.
+              if ((signalMode[sIndex]!=SIGNALMODE::ADC) && (signalMode[sIndex]!=SIGNALMODE::MAGADC) && (signalMode[sIndex]!=SIGNALMODE::MAGHALL_READ)){ // If we arent in ADC mode then we have a problem.
                 raiseError("Signal mode is not ADC");
                 return;
               }
@@ -687,7 +699,7 @@ void executeSerialCommand(String command, String commandString){
                 raiseError("Signal index out of range");
                 return;
               }
-              if ((signalMode[sIndex] != SIGNALMODE::ADC) && (signalMode[sIndex] != SIGNALMODE::MAGADC)){ // If we arent in ADC mode then we have a problem.
+              if ((signalMode[sIndex] != SIGNALMODE::ADC) && (signalMode[sIndex] != SIGNALMODE::MAGADC) && (signalMode[sIndex] != SIGNALMODE::MAGHALL_READ)){ // If we arent in ADC mode then we have a problem.
                 raiseError("Signal mode is not ADC");
                 return;
               }
@@ -1129,10 +1141,28 @@ void executeSerialCommand(String command, String commandString){
     serialSend("Read value ", value);
   } else if (command == "singleWriteMagnetDAC") {
     int channel = argGetInt(commandString,0); // Get the first argument from the serial input
-    float value = argGetFloat(commandString,1); // Get the first argument from the serial input
+    float value = argGetFloat(commandString,1);
     setMagDACI2C(channel, value);
   } else if (command == "calibrateMagnet") {
     calibrateMagnet();
+  } else if (command == "enableMagnet") {
+    bool enable = argGetBool(commandString,0); // Get the first argument from the serial input
+    enableMagnet(enable);
+  } else if (command == "setMagnet") {
+    int NC = argGetInt(commandString, 0); 
+    float value = argGetFloat(commandString, 1); 
+    setMagnetCurrent(NC, value);
+  } else if (command == "readHall") {
+    int id = argGetInt(commandString, 0);
+    float value = singleReadHall(id);
+    serialSend("Read value ", value);
+  } else if (command == "calibrateHall") {
+    int id = argGetInt(commandString, 0);
+    calibrateHall(id);
+  } else if (command == "setMagnetField") {
+    int NC = argGetInt(commandString, 0);
+    float value = argGetFloat(commandString, 1);
+    setMagnetField(NC, value);
   } else {
     raiseError("Command "+command+" not recognised");
   }

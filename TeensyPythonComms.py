@@ -314,6 +314,58 @@ def DACSetADCReadTest():
 
     getSerialResponses(2)
 
+def magSweepTest():
+    import numpy as np
+
+    # command = f"$setupSignalMode/0/0/6/1#%" # signal index / repeat / MagCurrent / NC
+    command = f"$setupSignalMode/0/0/7/1#%" # signal index / repeat / MagHall / NC    
+    ser.write(command.encode())  # Send the command
+
+    N = 100
+    dT = 1.0 # ms
+    # voltage_sequence = np.linspace(-0.2, 0.2, N)
+    t = np.linspace(0, dT / 1000 * (N - 1), N) # s
+    freq = 53 # Hz
+    # voltage_sequence = 0.01 * np.sin(2 * np.pi * freq * t)
+    field_sequence = 5 * np.sin(2 * np.pi * freq * t)
+
+    # Add a linear ramp
+    # voltage_sequence += np.linspace(-0.2, 0.2, N)
+    # voltage_sequence += 0.2
+    # field_sequence += 2.5
+
+    # sequence = "/".join([f"{v:.2f}/{dT}" for v in voltage_sequence])
+    sequence = "/".join([f"{f:.2f}/{dT}" for f in field_sequence])
+    command = f"$setupSignalDAC/0/{N}/" + sequence + "#%"
+    ser.write(command.encode())  # Send the command
+
+    command = f"$setupSignalMode/1/0/5/0#%" # signal index / repeat / MagHall / ID
+    ser.write(command.encode())  # Send the command
+
+    command = f"$setupSignalADC/1/{N}/{dT}#%"
+    ser.write(command.encode())  # Send the command
+
+    getSerialResponses(2)
+
+    command = "$startSignal/1#%"
+    ser.write(command.encode())  # Send the command
+
+    command = f"$startSignal/0#%"
+    ser.write(command.encode())  # Send the command
+
+    time.sleep(N * dT / 1000 + 0.2)
+
+    command = "$getSignalADC/1#%" #1 = signal index 1
+    ser.write(command.encode())  # Send the command
+
+    replies = getSerialResponses(2)
+
+    pts = [float(x) for x in replies[-1][11:-5].split("/")]
+
+    plt.figure()
+    plt.plot(t, pts[:N])
+
+
 def magDACSetADCReadTest(adc=3, dac=8):
     
     # # This is an example where we set up the DAC to write some signal sequence and read it back with the ADC.
@@ -362,7 +414,6 @@ def magDACSetADCReadTest(adc=3, dac=8):
 
     plt.figure()
     plt.plot(pts)
-    plt.show()
 
 def testSwitches():
     command = "$systemEnable#%" #system can be on for this
@@ -711,6 +762,33 @@ def measureMagnetZeroCurrent():
 
     disableSystem()    
 
+def enableMagnet(enable=False):
+    command = f"$enableMagnet/{int(enable)}#%"
+    ser.write(command.encode())  # Send the command
+    getSerialResponses(0.2)
+
+def readHall(id=0):
+    command = f"$readHall/{id}#%"
+    ser.write(command.encode())  # Send the command
+    replies = getSerialResponses(0.2)
+    value = float(replies[-1].split("/")[-1].split("#")[0])
+    print(f"Reading: {value:.2f} mT")
+
+def setMagnetCurrent(current=0.0):
+    command = f"$setMagnet/1/{current}#%" # NC = 1 / current
+    ser.write(command.encode())  # Send the command
+    getSerialResponses(0.2)
+
+def calibrateHall(id=0):
+    command = f"$calibrateHall/{id}#%"
+    ser.write(command.encode())  # Send the command
+    getSerialResponses(2)
+
+def setMagnetField(NC=1, field=0.0):
+    command = f"$setMagnetField/{NC}/{field}#%" # NC = 1 / field
+    ser.write(command.encode())  # Send the command
+    getSerialResponses(0.2)
+
 # measureMagnetZeroCurrent()
 
 disableSystem()
@@ -718,18 +796,45 @@ attachMagnetBoard()
 enableSystem()
 setupMagnetBoard()
 calibrateMagnet()
+
+calibrateHall(0)
+
+input("Start sweep. Press enter to continue...")
+enableMagnet(True)
+magSweepTest()
+enableMagnet(False)
+plt.show()
+
+# enableMagnet(True)
+# setMagnetField(1, 0.0)
+# try:
+#     while True:
+#         try:
+#             field = input("Enter magnet field in mT: ")
+#             field = float(field)
+#         except ValueError:
+#             print("Invalid input")
+#             continue
+#         setMagnetField(1, field)
+#         time.sleep(0.1)
+#         readHall(0)
+# except KeyboardInterrupt:
+#     print("System disabled")
+#     enableMagnet(False)
+#     disableSystem()
+
 disableSystem()
 
-# while(True):
-#     # channel = 3 -> Hall 1
-#     # ID = 2 -> magnet board
-#     ADCReadSingleTest(3, 2)
-#     time.sleep(0.5)
+# try:
+#     while True:
+#         readHall(0)
+#         time.sleep(0.1)
+# except KeyboardInterrupt:
+#     print("System disabled")
+#     disableSystem()
 
-# Run when the user keyboard interrupts the program
+disableSystem()
 
-
-# disableSystem()
 # # setupGPIO(29, 1, 0, 0)
 # # setupGPIO(30, 1, 0, 0)
 # attachMagnetBoard()
