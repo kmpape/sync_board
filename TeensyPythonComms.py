@@ -833,7 +833,7 @@ disableSystem()
 #     print("System disabled")
 #     disableSystem()
 
-disableSystem()
+# disableSystem()
 
 # # setupGPIO(29, 1, 0, 0)
 # # setupGPIO(30, 1, 0, 0)

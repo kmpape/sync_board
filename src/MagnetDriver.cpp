@@ -283,7 +283,7 @@ void calibrateHall(int hall_id = 0) {
             field[i] += singleReadHall(hall_id);
         }
         field[i] /= ((float)calibration_avg);
-        Serial.println(String(current[i], 4)+","+String(field[i], 4));
+        // Serial.println(String(current[i], 4)+","+String(field[i], 4));
     }
 
     enableMagnet(false);
