@@ -336,6 +336,21 @@ void LEDTimingHandler(){
 
 }
 
+float measurePhotodiode(int channel){
+    
+    if (!LEDAttached) {//Not allowed to use if LED board isnt there.
+        return;
+    }
+    setLEDVoltageOutput(channel, false); // Tell it we want to read back optical power from that LED.   
+    int num_readings_to_average = 1;
+    float sum = 0.0;
+    for (int i = 0; i < num_readings_to_average; i++){
+        sum += readADC(channel,1);
+    }
+    float readVoltage = sum/(num_readings_to_average*1.0);
+    float result = (readVoltage-0.3)*1000.0 ;  // 1000 converts to mV. We are using a generic 0.3 offset since htis is approximately what we expect for any given channel.
+    return result;
+}
 
 void measureLED(int channel, float* result){
     //Note result is a 2 element array coming in within which we can store our values.

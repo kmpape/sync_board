@@ -17,5 +17,6 @@ void switchLEDTimed(int channel, float time = 0.0, bool on = false);
 void LEDTimingHandler();
 void measureLED(int channel, float* result);
 void getLEDSetup(int channel, float* result);
+float measurePhotodiode(int channel);
 
 #endif // LED_DRIVER_H

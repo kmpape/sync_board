@@ -1051,7 +1051,17 @@ void executeSerialCommand(String command, String commandString){
           serialSendData("measureLED", result, 2); // Send the results back over serial
           //First argument will be current in Amps. Second argument will be optical power in mV.
 
-
+  } else if (command == "measurePhotodiode"){
+          //Command to read ont a photodiode even if there is no LED attached. Note that it will return APPROXIMAETLY 0 if there is no light but this is not calibrated.
+          // Argument 0 is the photodiode number from 1 to 8
+          int arg0 = argGetInt(commandString,0); // which photodiode
+          if (systemEnable == false  || LEDAttached == false){ // If stuff is off you shouldnt be messing with this buddy
+            raiseError("Cant measure photodiode while system disabled or if LED board isnt there!");
+            return;
+          }
+          float result = measurePhotodiode(arg0); // Measure the photodiode
+          serialSend("measurePhotodiode", result); // Send the result back over serial
+  
   } else if (command == "systemEnable"){ // 
         enableSystem(true); // Enable the system. 
   } else if (command == "systemDisable"){ //
