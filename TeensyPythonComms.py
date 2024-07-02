@@ -1,6 +1,6 @@
 import serial
 import time
-ser = serial.Serial('COM3', 2000000, timeout=0.001)
+ser = serial.Serial('/dev/ttyACM0', 2000000, timeout=0.001)
 data = []
 
 start_character="$"
@@ -486,7 +486,12 @@ def EnableTest():
 
     getSerialResponses(4)
 
-
+def photodiodeRead():
+    
+    command = "$measurePhotodiode/8#%" # 1st param int 2nd param float.
+    ser.write(command.encode())  # Send the command
+    getSerialResponses(1.0)
+        
 
 def debugtest():
     # Just for debugging calls some random hacky command
@@ -496,6 +501,8 @@ def debugtest():
 
     command = "$debug/8/0.9#%" # 1st param int 2nd param float.
     ser.write(command.encode())  # Send the command
+    
+    
 
     # command = "$debug/8/0.0#%" # 1st param int 2nd param float.
     # ser.write(command.encode())  # Send the command
@@ -513,8 +520,9 @@ enableSystem()
 # DACSetADCReadTest()
 # testSwitches()
 # testDigitalIO()
-LEDTest()
+# LEDTest()
 # LEDDisco()
 # testtrigger()   
 # EnableTest()
 # debugtest()
+photodiodeRead()
