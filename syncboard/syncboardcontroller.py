@@ -50,6 +50,9 @@ class SyncBoardController:
 
     def attach_leds(self):
         self.send_command(Command.format(Command.ATTACH_LED, True))
+        
+    def attach_magnet(self):
+        self.send_command(Command.format(Command.ATTACH_MAGNET, True))
 
     def calibrate_led(
             self,
@@ -61,6 +64,9 @@ class SyncBoardController:
         max_current = self.LED_MAX_CURRENT[led_id] if max_current is None else max_current
         LOGGER.info(f"Calibrating LED {led_id} with max current {max_current}.")
         self.send_command(Command.format(Command.CALIBRATE_LED, led_id, max_current))
+
+    def calibrate_magnet(self):
+        self.send_command(Command.format(Command.CALIBRATE_MAGNET))
 
     def disable_system(self):
         self.send_command(Command.format(Command.SYSTEM_DISABLE))
@@ -195,6 +201,9 @@ class SyncBoardController:
         for _led_id in self.LED_ID:
             self.setup_led(led_id=_led_id)
 
+    def setup_magnet(self):
+        self.send_command(Command.format(Command.SETUP_MAGNET))
+
     def setup_signal_dac(self):
         # TODO
         return
@@ -207,6 +216,9 @@ class SyncBoardController:
 
     def stop_signal(self, index: int):
         self.send_command(Command.format(Command.STOP_SIGNAL, index))
+
+    def scan_i2c(self):
+        return self.send_command(Command.format(Command.SCAN_I2C))
 
     def _is_equal_led_config(
             self,

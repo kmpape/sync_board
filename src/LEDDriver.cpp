@@ -100,7 +100,7 @@ void setLEDLevelRaw(int channel, float voltage){
         voltage = 3.2; //This is the maximum voltage we can apply to the LED.
         raiseError("You tried to set the LED raw voltage above 3.2V. Technically 3.3V might be OK but we are reducing this so that there is some leeway for the various measurements not getting right to the 3V3 rail. If you are seeing this measurement it means you are trying to set it above the happily calibrated range. Potential fixes would be reduce current sense resistor or the optical sense resistor depending on which mdoe it is");
     }
-    setDACI2C(channel, voltage); //Now set the voltage to that LED. Note this doesn't turn it on, just sets up the intensity for when it is.
+    setLEDDACI2C(channel, voltage); //Now set the voltage to that LED. Note this doesn't turn it on, just sets up the intensity for when it is.
     
 }
 

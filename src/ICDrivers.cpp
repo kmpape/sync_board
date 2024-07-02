@@ -6,6 +6,7 @@
 #include <SPI.h>
 #include <Wire.h>
 #include "digitalWriteFast.h"
+#include "MagnetDriver.h"
 
 ////Address book. Naming is Board_Device_ADR
 //I2C
@@ -16,6 +17,9 @@ uint8_t SyncBoard_ADC_ADR = 0x48; //This is the ADC chip that reads the 12V IO s
 uint8_t LED_ADC_ADR = 0x49; //This is the ADC chip that reads the LED currents. It is on the LED board.
 uint8_t LED_DAC_ADR = 0x57; //This is the DAC chip that sets the LED currents. It is on the LED board.
 uint8_t LED_PWM_ADR = 0x50; //This is the PWM chip that configures the LED channels. It is on the LED board.
+
+uint8_t MagBoard_ADC_ADR = 0x4A; //This is the ADC chip that reads the magnet currents. It is on the magnet board.
+uint8_t MagBoard_DAC_ADR = 0x54; //This is the DAC chip that sets the magnet currents. It is on the magnet board.
 
 void I2CWrite(int address, uint8_t data, size_t length = 1){ // Overload in case they sendone thing at a time.
     // Writes data to i2c address.
@@ -57,8 +61,47 @@ void I2CWrite(int address, uint8_t* data, size_t length){
 
 }
  
+void I2CScan(){
+    // Scans the I2C bus and prints out the addresses of all devices found.
+    byte error, address;
+    int nDevices;
+    Serial.println("Scanning...");
+    nDevices = 0;
+    for(address = 1; address < 127; address++ ) 
+    {
+        // The i2c_scanner uses the return value of
+        // the Write.endTransmisstion to see if
+        // a device did acknowledge to the address.
+        Wire.beginTransmission(address);
+        error = Wire.endTransmission();
+        if (error == 0)
+        {
+            Serial.print("I2C device found at address 0x");
+            if (address<16) 
+                Serial.print("0");
+            Serial.print(address,HEX);
+            Serial.println("  !");
+            nDevices++;
+        }
+        else if (error==4) 
+        {
+            Serial.print("Unknow error at address 0x");
+            if (address<16) 
+                Serial.print("0");
+            Serial.println(address,HEX);
+        }    
+    }
+    if (nDevices == 0) 
+        Serial.println("No I2C devices found\n");
+    else
+        Serial.println("Done.\n");
+}
 
-
+uint8_t checkForDevice(int address) {
+    // Checks if a device is present at a given I2C address.
+    Wire.beginTransmission(address);
+    return Wire.endTransmission();
+}
 
 void I2CRead(int address, byte* buffer, size_t bytes_to_read){
     // Read several bytes from I2C and you will then need to read them out of your buffer.
@@ -298,13 +341,9 @@ void setupDACSPI(bool turnOn = false){
 
 }
 
-void setDACI2C(int channel, float value){
-    //This is to send valules to AD5669 on the LED board.
-    if (LEDAttached == false){
-        raiseError("You tried to set the DAC on the LED board but it is not attached. You should check your hardware and connections.");
-        return;
-    }
-    //Channel 1-8 and value 0-3.3V
+// Not intended for public use. Use setLEDDACI2C or setMagDACI2C instead.
+// Channel 1-8 and value 0-3.3V
+void setDACI2C(int addr, int channel, float value){
     if (value<0.0){
         value = 0.0;
     } else if (value>3.3){
@@ -330,30 +369,49 @@ void setDACI2C(int channel, float value){
 
     //Now we combine the data1 and data bytes into a uint8_t array to send
     uint8_t data[3] = {data1, upperByte, lowerByte};
-    I2CWrite(LED_DAC_ADR, data, 3); // Send the data to the DAC.
+    I2CWrite(addr, data, 3); // Send the data to the DAC.
 
 }
 
-void setupDACI2C(bool turnOn = false){
-    //This is to set up AD5669 on the LED board. It is a 16 bit DAC with 8 channels controlled by I2C.
+//Channel 1-8 and value 0-3.3V
+void setLEDDACI2C(int channel, float value) {
+    //This is to send valules to AD5669 on the LED board.
     if (LEDAttached == false){
-        raiseError("You tried to set up the DAC on the LED board but it is not attached. You should check your hardware and connections.");
+        raiseError("You tried to set the DAC on the LED board but it is not attached. You should check your hardware and connections.");
         return;
     }
+    setDACI2C(LED_DAC_ADR, channel, value);
+}
+
+//Channel 1-8 and value 0-3.3V
+void setMagDACI2C(int channel, float value) {
+    //This is to send valules to AD5669 on the Magnet board.
+    if (MagAttached == false){
+        raiseError("You tried to set the DAC on the Magnet board but it is not attached. You should check your hardware and connections.");
+        return;
+    }
+    if (MagDAC_Enabled == false) {
+        raiseError("You tried to set the DAC on the Magnet board but the Magnet DAC has not been enabled.");
+        return;
+    }
+    setDACI2C(MagBoard_DAC_ADR, channel, value);
+}
+
+void setupDACI2C(int addr, bool turnOn = false){
 
     //First we power everything down.
     uint8_t data1 = 0x40; // Command byte for set power mode.
     uint8_t data2 = 0x02; // Data byte for power down mode - this is 100kOhm to ground.
     uint8_t data3 = 0xFF; // Data byte for setting all channels to power down mode.
     uint8_t data[3] = {data1, data2, data3}; //Conbine into array.
-    I2CWrite(LED_DAC_ADR, data, 3); // Send tp DAC
+    I2CWrite(addr, data, 3); // Send tp DAC
 
     //Now tell it to use external reference.
     data1 = 0x80; // Command for setting reference bits.
     data2 = 0x00; // Dont care
     data3 = 0x00; // Set internal referene to off. 0x01 would be on.
     data[0] = data1; data[1] = data2; data[2] = data3; //Combine into array.
-    I2CWrite(LED_DAC_ADR, data, 3); // Send tp DAC
+    I2CWrite(addr, data, 3); // Send tp DAC
 
     if (turnOn){ //Only if we are turning it on do we pull it on.
         //Now we power it up.
@@ -361,10 +419,18 @@ void setupDACI2C(bool turnOn = false){
         data2 = 0x00; // Data byte for power down mode - this is normal operation (i.e. it is on)
         data3 = 0xFF; // Data byte for setting all channels to on modee.
         data[0] = data1; data[1] = data2; data[2] = data3; //Combine into array.
-        I2CWrite(LED_DAC_ADR, data, 3); // Send tp DAC
+        I2CWrite(addr, data, 3); // Send tp DAC
     }
 }
 
+void setupLEDDACI2C(bool turnOn = false){
+    //This is to set up AD5669 on the LED board. It is a 16 bit DAC with 8 channels controlled by I2C.
+    if (LEDAttached == false){
+        raiseError("You tried to set up the DAC on the LED board but it is not attached. You should check your hardware and connections.");
+        return;
+    }
+    setupDACI2C(LED_DAC_ADR, turnOn);
+}
 
 uint16_t readADCOnce(int channel, bool internal = false,  int ADC_ID = 0){
     
@@ -373,8 +439,10 @@ uint16_t readADCOnce(int channel, bool internal = false,  int ADC_ID = 0){
         ADC_address = SyncBoard_ADC_ADR;
     } else if (ADC_ID == 1){
         ADC_address = LED_ADC_ADR;
+    } else if (ADC_ID == 2){
+        ADC_address = MagBoard_ADC_ADR;
     } else {
-        raiseError("You tried to read from an ADC with ID "+String(ADC_ID)+" but that is not a valid ID. It should be 0 or 1.");
+        raiseError("You tried to read from an ADC with ID "+String(ADC_ID)+" but that is not a valid ID. It should be 0, 1 or 2.");
         return 0;
     }
     

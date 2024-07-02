@@ -5,6 +5,10 @@ LOGGER = logging.getLogger(__name__)
 
 
 class Command:
+    SETUP_MAGNET = "setupMagnetBoard"
+    CALIBRATE_MAGNET = "calibrateMagnet"
+    CALIBRATE_HALL = "calibrateHall"
+    ATTACH_MAGNET = "attachMagnet"
     ATTACH_LED = "attachLED"
     CALIBRATE_LED = "calibrateLED"
     DEBUG = "debug"
@@ -33,6 +37,7 @@ class Command:
     SYSTEM_ENABLE = "systemEnable"
     WRITE_GPIO = "writeGPIO"
     WRITE_DO = "writeDO"
+    SCAN_I2C = "scanI2C"
 
     _NUM_SIG_FIG_FLOAT = 7
     _START_CHAR = "$"

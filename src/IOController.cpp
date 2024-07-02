@@ -233,7 +233,10 @@ void turnICsOff(){
         // Note these are in essence a hard reset and rely on the fact that 0 on the outputs is off in our PCB
     if (LEDAttached){
         setPWM(LED_PWM_ADR, 0, 0.0); // Turn off the LED PWM if it is there. Note this sets LED currents to be the controller of everything.
-        setupDACI2C(false); // Turn on the DAC
+        setupLEDDACI2C(false); // Turn on the DAC
+    }
+    if (MagAttached){
+        setupDACI2C(MagBoard_DAC_ADR, false); // Turn off the DAC
     }
 }
 
@@ -403,7 +406,7 @@ void configureIO (bool GPIOInput[9], int GPIOFunction[9], bool GPIOEnabled[9], b
         enableGPIOandLevelShift(); // Enable the gpios and level shift if we are turning everything on. Note this should activate the NOT ready to connect indicator LED on the SyncBoard.
         setupDACSPI(true); // Turn on the DAC
         if (LEDAttached){  
-            setupDACI2C(true); // Turn on the DAC#
+            setupLEDDACI2C(true); // Turn on the DAC#
         }
 
         Serial.println("Enabled GPIOs and level shifters");
@@ -443,7 +446,7 @@ void debugIO(int channel, float value){
     // setLEDFeedbackSignal(channel, false); // FOr this channel set it to optical feedback (false)
     // delay(5);
     // setLEDVoltageOutput(channel, true); // Also set so that it will be readin gout current from ADC.
-    // setDACI2C(channel, value); //Now set the voltage to be given by the user. Should be between 0 and 3.3V. 
+    // setLEDDACI2C(channel, value); //Now set the voltage to be given by the user. Should be between 0 and 3.3V. 
     
     // digitalWriteFast(LED_8_Enable, HIGH); // Enable the LED
     // delay(100); // Wait for 100ms
