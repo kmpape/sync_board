@@ -7,6 +7,7 @@ LOGGER = logging.getLogger(__name__)
 class Command:
     SETUP_MAGNET = "setupMagnetBoard"
     CALIBRATE_MAGNET = "calibrateMagnet"
+    CALIBRATE_HALL = "calibrateHall"
     ATTACH_MAGNET = "attachMagnet"
     ATTACH_LED = "attachLED"
     CALIBRATE_LED = "calibrateLED"
