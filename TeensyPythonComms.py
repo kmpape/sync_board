@@ -685,7 +685,7 @@ def attachMagnetBoard():
     getSerialResponses(0.2) # Wait for 0.2 seconds for the reply/s
 
 def setupMagnetBoard():
-    command = "$Automaton.initialise_fov_focus#%"
+    command = "$setupMagnetBoard#%"
     ser.write(command.encode())  # Send the command
     getSerialResponses(0.2) # Wait for 0.2 seconds for the reply/s
 
@@ -799,6 +799,8 @@ def setMagnetField(NC=1, field=0.0):
 # measureMagnetZeroCurrent()
 
 disableSystem()
+time.sleep(1.0)
+input("Disabled system. Press enter to continue...")
 attachMagnetBoard()
 enableSystem()
 setupMagnetBoard()
@@ -807,10 +809,26 @@ calibrateMagnet()
 calibrateHall(0)
 
 input("Start sweep. Press enter to continue...")
+
 enableMagnet(True)
-magSweepTest()
+
+while (x := input("Input e for enable, d for disable, float for setField, q to quit: ")) != "q":
+    if x == "e":
+        enableMagnet(True)
+    elif x == "d":
+        enableMagnet(False)
+    else:
+        try:
+            field = float(x)
+        except ValueError:
+            print("Invalid input")
+            continue
+        setMagnetField(1, field)
+    readHall(0)
+
+# magSweepTest()
 enableMagnet(False)
-plt.show()
+# plt.show()
 
 # enableMagnet(True)
 # setMagnetField(1, 0.0)
@@ -959,4 +977,4 @@ disableSystem()
 # testtrigger()   
 # EnableTest()
 # debugtest()
-photodiodeRead()
+# photodiodeRead()

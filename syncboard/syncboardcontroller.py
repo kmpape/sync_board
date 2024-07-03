@@ -19,7 +19,8 @@ handler.setFormatter(FORMATTER)
 LOGGER.addHandler(handler)
 LOGGER.propagate = False
 
-float_rgx = re.compile(r'\d+\.\d+')
+# regex search string that can handle scientific notation, e.g. 1.2 -> 1.2, 1.2e-1 -> 0.12, 1.2e2 -> 120
+float_rgx = re.compile(r'[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?')
 
 class SyncBoardController:
     LED_ID = [1, 2, 3, 4, 7]
@@ -81,10 +82,12 @@ class SyncBoardController:
         self.send_command(Command.format(Command.CALIBRATE_LED, led_id, max_current))
 
     def calibrate_magnet(self):
-        self.send_command(Command.format(Command.CALIBRATE_MAGNET))
+        response = self.send_command(Command.format(Command.CALIBRATE_MAGNET), wait_time=5)
+        print(response)
 
     def calibrate_hall(self, hall_id: int):
-        self.send_command(Command.format(Command.CALIBRATE_HALL, hall_id))
+        response = self.send_command(Command.format(Command.CALIBRATE_HALL, hall_id), wait_time=2)
+        print(response)
 
     def disable_system(self):
         self.send_command(Command.format(Command.SYSTEM_DISABLE))
