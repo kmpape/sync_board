@@ -19,6 +19,7 @@ handler.setFormatter(FORMATTER)
 LOGGER.addHandler(handler)
 LOGGER.propagate = False
 
+float_rgx = re.compile(r'\d+\.\d+')
 
 class SyncBoardController:
     LED_ID = [1, 2, 3, 4, 7]
@@ -54,6 +55,20 @@ class SyncBoardController:
     def attach_magnet(self):
         self.send_command(Command.format(Command.ATTACH_MAGNET, True))
 
+    def enable_magnet(self, enable: bool = True):
+        self.send_command(Command.format(Command.ENABLE_MAGNET, enable))
+    
+    def set_magnet_current(self, current: float, NC: bool = True):
+        self.send_command(Command.format(Command.SET_MAGNET_CURRENT, int(NC), current))
+        
+    def set_magnet_field(self, field: float, NC: bool = True):
+        self.send_command(Command.format(Command.SET_MAGNET_FIELD, int(NC), field))
+    
+    def read_hall(self, hall_id: int) -> float:
+        response = self.send_command(Command.format(Command.READ_HALL, hall_id), wait_time=0.1)
+        print(response)
+        return float(float_rgx.search(response).group())
+    
     def calibrate_led(
             self,
             led_id: int,
@@ -67,6 +82,9 @@ class SyncBoardController:
 
     def calibrate_magnet(self):
         self.send_command(Command.format(Command.CALIBRATE_MAGNET))
+
+    def calibrate_hall(self, hall_id: int):
+        self.send_command(Command.format(Command.CALIBRATE_HALL, hall_id))
 
     def disable_system(self):
         self.send_command(Command.format(Command.SYSTEM_DISABLE))
@@ -130,7 +148,9 @@ class SyncBoardController:
                 LOGGER.warning("Sync board already initialised. Returning.")
                 return
         self.attach_leds()
+        self.attach_magnet()
         self.enable_system()
+        self.setup_magnet()
         self._setup_leds()
         self._is_initialised = True
 

@@ -685,7 +685,7 @@ def attachMagnetBoard():
     getSerialResponses(0.2) # Wait for 0.2 seconds for the reply/s
 
 def setupMagnetBoard():
-    command = "$setupMagnetBoard#%"
+    command = "$Automaton.initialise_fov_focus#%"
     ser.write(command.encode())  # Send the command
     getSerialResponses(0.2) # Wait for 0.2 seconds for the reply/s
 
