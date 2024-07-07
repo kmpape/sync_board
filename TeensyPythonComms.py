@@ -1,6 +1,6 @@
 import serial
 import time
-ser = serial.Serial('COM3', 2000000, timeout=0.001)
+ser = serial.Serial('/dev/syncboard', 2000000, timeout=0.001)
 data = []
 
 start_character="$"
@@ -504,7 +504,7 @@ def debugtest():
 
 
 
-enableSystem()
+# enableSystem()
 # time.sleep(0.5)
 # ADCReadSingleTest()
 # ADCReadSequenceTest()
@@ -513,7 +513,7 @@ enableSystem()
 # DACSetADCReadTest()
 # testSwitches()
 # testDigitalIO()
-LEDTest()
+# LEDTest()
 # LEDDisco()
 # testtrigger()   
 # EnableTest()

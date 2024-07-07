@@ -3,13 +3,25 @@ from contextlib import contextmanager
 import serial
 import time
 from typing import List, Union
+from termios import error as TermiosError
 
+FORMATTER = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+LOGGING_LEVEL = logging.DEBUG
 LOGGER = logging.getLogger(__name__)
+for handler in LOGGER.handlers:
+    LOGGER.removeHandler(handler)
+LOGGER.setLevel(LOGGING_LEVEL)
+handler = logging.StreamHandler()
+handler.setFormatter(FORMATTER)
+LOGGER.addHandler(handler)
+LOGGER.propagate = False
 
 
 class SerialConnection:
     NUM_SIG_FIG_FLOAT = 7
     DEBUG_MODE = False
+    DEBUG_MODE_WAIT_TIME = 0.01
+
     def __init__(
         self,
         port: str,
@@ -35,19 +47,24 @@ class SerialConnection:
         serial_connection.disconnect()
 
     def reset_buffers(self):
-        self.connection.reset_input_buffer()
-        self.connection.reset_output_buffer()
+        try:
+            self.connection.reset_input_buffer()
+            self.connection.reset_output_buffer()
+        except TermiosError as e:
+            LOGGER.warning(e)
+            self.connection.close()
+            self.connection.open()
 
     def send(self, data: bytes):
+        LOGGER.debug(f"serialconnection.send: Sending data: {data}")
         self.reset_buffers()
-        LOGGER.debug(f"Sending data: {data}")
         self.connection.write(data)
 
     def send_command(self, command: str) -> Union[None, List[str]]:
         encoded_command = command.encode()
         self.send(encoded_command)
         if self.DEBUG_MODE:
-            responses = self.read_responses(wait_time=0)
+            responses = self.read_responses(wait_time=self.DEBUG_MODE_WAIT_TIME)
         else:
             return None
 

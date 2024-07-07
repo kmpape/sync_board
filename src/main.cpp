@@ -8,6 +8,7 @@
 #include "IOController.h"
 #include "digitalWriteFast.h"
 #include "LEDDriver.h"
+
 // Debug mode and various parameters
 bool debugmode = true; // Set to true to enable debug mode. This will do some extra things. false for normal operation.
 unsigned int debugtime = 0;
@@ -1038,6 +1039,9 @@ void executeSerialCommand(String command, String commandString){
             return;
           }
           switchLEDDirect(arg0, arg1); // Switch the LED as instructed
+          float result[1];
+          result[0] = (float)arg0;
+          serialSendData("switchLED", result, 1); // Send the results back over serial ADDED BY IDRIS TODO
   } else if (command == "measureLED"){
           // Command used to measure the LED current and optical power output when it is on/in a given state.
           
