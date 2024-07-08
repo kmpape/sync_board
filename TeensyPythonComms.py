@@ -1,6 +1,11 @@
+#%%
 import serial
 import time
-ser = serial.Serial('/dev/syncboard', 2000000, timeout=0.001)
+
+#%%
+ser = serial.Serial('/dev/syncboard', 2000000, timeout=0)
+
+#%%
 data = []
 
 start_character="$"
@@ -11,6 +16,10 @@ delimeter = "/"
 def raiseError(message):
     # Custom error function, can change it later if you wish to actually raise an error rather than print it/add timestamps etc.
     print(message)
+
+def disableSystem():
+    command = "$systemDisable#%" #system can be on for this
+    ser.write(command.encode())  # Send the command
 
 def enableSystem():
     command = "$attachLED/true#%" #Tell it we want to set up to attach the LEDs
@@ -518,3 +527,4 @@ def debugtest():
 # testtrigger()   
 # EnableTest()
 # debugtest()
+# %%

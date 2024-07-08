@@ -9,7 +9,7 @@ from syncboard.command import Command
 
 
 FORMATTER = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
-LOGGING_LEVEL = logging.DEBUG
+LOGGING_LEVEL = logging.WARNING
 LOGGER = logging.getLogger(__name__)
 for handler in LOGGER.handlers:
     LOGGER.removeHandler(handler)

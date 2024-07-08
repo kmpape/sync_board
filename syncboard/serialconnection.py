@@ -6,7 +6,7 @@ from typing import List, Union
 from termios import error as TermiosError
 
 FORMATTER = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
-LOGGING_LEVEL = logging.DEBUG
+LOGGING_LEVEL = logging.WARNING
 LOGGER = logging.getLogger(__name__)
 for handler in LOGGER.handlers:
     LOGGER.removeHandler(handler)
@@ -28,7 +28,8 @@ class SerialConnection:
         baud_rate: int,
         num_data_bits=serial.EIGHTBITS,
         num_stop_bits=serial.STOPBITS_ONE,
-        read_timeout_s: float = 0.001,
+        # read_timeout_s: float = 0.001,
+        read_timeout_s: float = 1.0,
     ):
         LOGGER.debug(f"Connecting to {port} at {baud_rate} baud")
         self.connection = serial.Serial(
