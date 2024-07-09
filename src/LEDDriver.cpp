@@ -187,9 +187,11 @@ void switchLED(int channel, bool on = false, bool force = false){
         return;
     }
 
-    if (LEDLevelSet[channel-1]==0.0 && force == false && !on){ //If the level hasnt been set we dont allow the user to turn it on.
-        raiseError("You have not yet set the level for LED ID " + String(channel) + ". You need to run the setLEDLevel function for that LED before you can turn it on.");
-        on = false; // In this case we proceed to turn it off.
+    if (on == true){
+        if (LEDLevelSet[channel-1]==0.0 && force == false && !on){ //If the level hasnt been set we dont allow the user to turn it on.
+            raiseError("You have not yet set the level for LED ID " + String(channel) + ". You need to run the setLEDLevel function for that LED before you can turn it on.");
+            on = false; // In this case we proceed to turn it off.
+        }
     }
 
     int pinname;

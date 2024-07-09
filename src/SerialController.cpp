@@ -36,6 +36,7 @@ void raiseError(String errorString);
 
 
 String serialEncodeData(String command, float* array, size_t arrayLength) {
+  // TODO: This function should reinterpret the float as an int and the receiver should convert it back to a float.
   // This function is meant to be used with arrays of data.
   String encodedCommand = start_character + command;
   for (size_t i=0; i<arrayLength; i++){
