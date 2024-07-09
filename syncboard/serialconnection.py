@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import serial
 import time
 from typing import List, Union
+from termios import error as TermiosError
 
 LOGGING_LEVEL = logging.INFO
 FORMATTER = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
@@ -45,8 +46,13 @@ class SerialConnection:
         serial_connection.disconnect()
 
     def reset_buffers(self):
-        self.connection.reset_input_buffer()
-        self.connection.reset_output_buffer()
+        try:
+            self.connection.reset_input_buffer()
+            self.connection.reset_output_buffer()
+        except TermiosError as e:
+            LOGGER.warning(e)
+            self.connection.close()
+            self.connection.open()
 
     def send(self, data: bytes):
         self.reset_buffers()
