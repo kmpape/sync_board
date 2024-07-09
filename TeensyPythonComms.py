@@ -1,7 +1,7 @@
 import serial
 import time
 import matplotlib.pyplot as plt
-ser = serial.Serial('/dev/ttyACM0', 2000000, timeout=0.001)
+ser = serial.Serial('/dev/syncboard', 2000000, timeout=0.001)
 data = []
 
 start_character="$"
@@ -798,36 +798,36 @@ def setMagnetField(NC=1, field=0.0):
 
 # measureMagnetZeroCurrent()
 
-disableSystem()
-time.sleep(1.0)
-input("Disabled system. Press enter to continue...")
-attachMagnetBoard()
-enableSystem()
-setupMagnetBoard()
-calibrateMagnet()
-
-calibrateHall(0)
-
-input("Start sweep. Press enter to continue...")
-
-enableMagnet(True)
-
-while (x := input("Input e for enable, d for disable, float for setField, q to quit: ")) != "q":
-    if x == "e":
-        enableMagnet(True)
-    elif x == "d":
-        enableMagnet(False)
-    else:
-        try:
-            field = float(x)
-        except ValueError:
-            print("Invalid input")
-            continue
-        setMagnetField(1, field)
-    readHall(0)
-
-# magSweepTest()
-enableMagnet(False)
+# disableSystem()
+# time.sleep(1.0)
+# input("Disabled system. Press enter to continue...")
+# attachMagnetBoard()
+# enableSystem()
+# setupMagnetBoard()
+# calibrateMagnet()
+#
+# calibrateHall(0)
+#
+# input("Start sweep. Press enter to continue...")
+#
+# enableMagnet(True)
+#
+# while (x := input("Input e for enable, d for disable, float for setField, q to quit: ")) != "q":
+#     if x == "e":
+#         enableMagnet(True)
+#     elif x == "d":
+#         enableMagnet(False)
+#     else:
+#         try:
+#             field = float(x)
+#         except ValueError:
+#             print("Invalid input")
+#             continue
+#         setMagnetField(1, field)
+#     readHall(0)
+#
+# # magSweepTest()
+# enableMagnet(False)
 # plt.show()
 
 # enableMagnet(True)
