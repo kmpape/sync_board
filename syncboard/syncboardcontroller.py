@@ -8,8 +8,8 @@ from syncboard.serialconnection import SerialConnection
 from syncboard.command import Command
 
 
-FORMATTER = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 LOGGING_LEVEL = logging.INFO
+FORMATTER = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 LOGGER = logging.getLogger(__name__)
 for handler in LOGGER.handlers:
     LOGGER.removeHandler(handler)
@@ -21,6 +21,7 @@ LOGGER.propagate = False
 
 # regex search string that can handle scientific notation, e.g. 1.2 -> 1.2, 1.2e-1 -> 0.12, 1.2e2 -> 120
 float_rgx = re.compile(r'[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?')
+
 
 class SyncBoardController:
     LED_ID = [1, 2, 3, 4, 7]
@@ -99,9 +100,15 @@ class SyncBoardController:
         if (led_id is not None) and (led_id not in self.LED_ID):
             LOGGER.warning(f"LED ID {led_id} unknown. Disabling all LEDs.")
             led_id = None
-        led_ids = self.LED_ID if led_id is None else [led_id]
-        for _led_id in led_ids:
-            self.send_command(Command.format(Command.SWITCH_LED, _led_id, 0))
+        if led_id is None:
+            self.disable_all_leds()
+        else:
+            self.send_command(Command.format(Command.SWITCH_LED, led_id, 0))
+            self._led_configs[led_id]['status'] = "off"
+
+    def disable_all_leds(self):
+        self.send_command(Command.format(Command.DISABLE_ALL_LEDS))
+        for _led_id in self.LED_ID:
             self._led_configs[_led_id]['status'] = "off"
 
     def enable_led(

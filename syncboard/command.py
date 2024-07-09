@@ -13,9 +13,11 @@ class Command:
     ENABLE_MAGNET = "enableMagnet"
     SET_MAGNET_CURRENT = "setMagnet"
     SET_MAGNET_FIELD = "setMagnetField"
+
     ATTACH_LED = "attachLED"
     CALIBRATE_LED = "calibrateLED"
     DEBUG = "debug"
+    DISABLE_ALL_LEDS = "disableAllLEDs"
     FACTORY_RESET = "factoryReset"
     GET_LED_SETUP = "getLEDSetup"
     GET_SIGNAL_ADC = "getSignalADC"

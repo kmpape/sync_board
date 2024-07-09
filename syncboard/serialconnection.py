@@ -4,19 +4,29 @@ import serial
 import time
 from typing import List, Union
 
+LOGGING_LEVEL = logging.INFO
+FORMATTER = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 LOGGER = logging.getLogger(__name__)
+for handler in LOGGER.handlers:
+    LOGGER.removeHandler(handler)
+LOGGER.setLevel(LOGGING_LEVEL)
+handler = logging.StreamHandler()
+handler.setFormatter(FORMATTER)
+LOGGER.addHandler(handler)
+LOGGER.propagate = False
 
 
 class SerialConnection:
     NUM_SIG_FIG_FLOAT = 7
     DEBUG_MODE = False
+
     def __init__(
         self,
         port: str,
         baud_rate: int,
         num_data_bits=serial.EIGHTBITS,
         num_stop_bits=serial.STOPBITS_ONE,
-        read_timeout_s: float = 0.001,
+        read_timeout_s: float = 1,
     ):
         LOGGER.debug(f"Connecting to {port} at {baud_rate} baud")
         self.connection = serial.Serial(
