@@ -527,9 +527,11 @@ void executeSerialCommand(String command, String commandString){
   if (command == "factoryReset"){
               //clears the EEPROM so use with caution.
               factoryReset();
+
   } else if (command == "resetConfig"){
               //resets the system to default values - soft reset should be equivalent to turning it off and on
               resetConfig();
+
   } else if (command == "attachLED"){
               //Attaches the LED driver. This is called when the LED driver is connected and we want to start using it.
               if (systemEnable == true){
@@ -538,6 +540,8 @@ void executeSerialCommand(String command, String commandString){
               }
               bool LEDpresent = argGetBool(commandString,0); // If the LED is present or not.
               LEDAttached = LEDpresent; //Set to value of whatever the user sent.
+              serialSend(command, LEDAttached);
+
   } else if (command == "attachMagnet") {
               // Attaches the Magnet driver. This is called when the Magnet driver is connected and we want to start using it.
               if (systemEnable == true){
@@ -547,6 +551,8 @@ void executeSerialCommand(String command, String commandString){
               bool MagnetPresent = argGetBool(commandString,0); // If the Magnet is present or not.
               attachMagnetBoard();
               MagAttached = MagnetPresent; //Set to value of whatever the user sent.
+              serialSend(command, MagAttached);
+
   } else if (command == "setupSignalMode"){
               ///Used to set up a dynamic signal mode. Note it will not do anything if systemEnable is true. We CAN do this why system is enabled, but not while a signal is active.
               //Argument 1 = signal index, argument 2 = signal repeat, argument 3 = signal mode, argument 4 = signal options, 
@@ -570,6 +576,7 @@ void executeSerialCommand(String command, String commandString){
               signalRepeat[sIndex] = sRepeat;
               signalMode[sIndex] = sMode;
               signalOptions[sIndex] = sOptions;
+              serialSend(command, 1);
         
   } else if (command == "setupSignalDAC"){
               //Used to set up the data in a DAC output signal to generate AWG. This could also be used for GPIO output signals. This will be a series of timings and values. We can do this if system is enabled but not while signal is active.
@@ -616,6 +623,7 @@ void executeSerialCommand(String command, String commandString){
                 signalData[sIndex][i] = 0.0;
                 signalTiming[sIndex][i] = -1;
               }
+              serialSend(command, 1);
 
   } else if (command == "setupSignalADC"){
               //Used to set up ADC to read a series of values. We can do this if system is enabled but not while signal is active.
@@ -655,6 +663,7 @@ void executeSerialCommand(String command, String commandString){
                 signalData[sIndex][i] = 0.0;
                 signalTiming[sIndex][i] = -1;
               }
+              serialSend(command, 1);
 
   } else if (command == "startSignal"){
               // Used to start reading/sending a given signal. We can do this if system is enabled but not while signal is active.
@@ -674,6 +683,7 @@ void executeSerialCommand(String command, String commandString){
                 return;
               }
               signalResetAndStart(sIndex); // Reset the signal and start it.
+              serialSend(command, 1);
   
   } else if (command == "stopSignal"){
               // Used to stop an ongoing signal. Usually this wouldnt be run for ones not set up to repeat as they should just end, but what the hell.
@@ -688,6 +698,7 @@ void executeSerialCommand(String command, String commandString){
                 return;
               }
               signalStopAndBackToStart(sIndex); // Reset the signal and stop it.
+              serialSend(command, 1);
 
   } else if (command == "getSignalADC"){
               // Used to get the recorded ADC data back from the system.
@@ -735,7 +746,9 @@ void executeSerialCommand(String command, String commandString){
                   return;
                 }
                 // Serial.println("Time was " + String(micros() - timer1) + " microseconds");  
-              } 
+              }
+              serialSend(command, 1);
+
   } else if (command == "readGPIO"){
               // used to read GPIO pin if set that way.
               // Argument 0 is pin number
@@ -778,7 +791,7 @@ void executeSerialCommand(String command, String commandString){
               GPIOFunction[arg0] = arg2; // Set the GPIO function
               GPIOEnabled[arg0] = arg1; // Set the GPIO enabled/disabled
               Serial.println("Set up GPIO " + String(arg0) + " to enabled = " + String(arg1) + " function = " + String(arg2) + " input = " + String(arg3));
-        return;
+              
   } else if (command == "setSwitch"){
             //Used to switch the 16x switches on the syncboard. Note it can be done regardless of systemEnable state.
             // Argument 0 is switch number, argument 1 is the value from 1.0 (fully on) to 0.0 (off) and in between is PWM.
@@ -794,6 +807,7 @@ void executeSerialCommand(String command, String commandString){
               return;
             }
             setSwitch(arg0, arg1); // Set the switch to the value requested.
+            serialSend(command, 1);
 
   } else if (command == "writeDO"){
             // Used to switch one of the four digital outputs to a new state.
@@ -814,6 +828,7 @@ void executeSerialCommand(String command, String commandString){
             } else if (arg0 == 4){
               digitalWriteFast(D_OUT_4, arg1);
             } 
+            serialSend(command, 1);
 
   } else if (command == "readDI"){
             // Used to read one of the four digital inputs.
@@ -869,6 +884,7 @@ void executeSerialCommand(String command, String commandString){
           return;
         }
         imageSequence(true); // Call the function that starts capturing an image. 1st flag means we are starting sequence.
+        serialSend(command, 1);
 
 
 
@@ -887,6 +903,7 @@ void executeSerialCommand(String command, String commandString){
           syncMode = arg0; // Set the sync mode
           bool arg1 = argGetBool(commandString,1); 
           modeLEDSwitchedByCamera = arg1; // Set the exposure mode
+          serialSend(command, 1);
       
 
   } else if (command == "setupImageSequence"){ 
@@ -965,6 +982,7 @@ void executeSerialCommand(String command, String commandString){
           }
           float adcValue = readADC(arg0, adcID); // Read the ADC value
           serialSend("readADC", adcValue); // Send the value back over serial
+
   } else if (command == "setDAC"){
           // used to set DAC on SyncBoard 
           // Argument 0 is channel number from 0 to 8, note that 0 corresponds to setting all channels at once.
@@ -976,6 +994,8 @@ void executeSerialCommand(String command, String commandString){
             return;
           }
           setDAC(channel, value); // Set the DAC value
+          serialSend(command, 1);
+
   } else if (command == "calibrateLED"){
           // Used to run the LED calibration on a specific LED.
           // Argument 0 is the LED number from 1 to 8
@@ -1000,6 +1020,7 @@ void executeSerialCommand(String command, String commandString){
           } else {  
             raiseError("LED current out of range");
           }
+          serialSend(command, 1);
 
   } else if (command == "setupLED")  {
           // Command to set up a LED mode ahead of it being used to do anything in particular. THis sets the feedback mode (current or optical) as well as the power level. Note it should already be calibrated!
@@ -1030,6 +1051,8 @@ void executeSerialCommand(String command, String commandString){
             raiseError("Feedback mode not recognised");
             return;
           }
+          serialSend(command, arg0);
+
   } else if (command == "getLEDSetup"){ //Function basically used to read back calibration values of a LED if you want to know what the current level corresponds to power-wise.
           //Worth noting the accuracy of this will depend on what one you are using for feedback. That is, if you have current feedback opticla power will be less accurace since they arent directly linearly proportional (and vice versa)
           //Argument 0 is which LEd you want details for.
@@ -1037,9 +1060,6 @@ void executeSerialCommand(String command, String commandString){
           float result[4]; // Array to store the results. 1st arg is what is the current level set. 2nd arg is what current does this correspond to. 3rd arg is what optical power (in mV) does it correspond to. 4th arg is what is current max current allowed.
           getLEDSetup(arg0, result); // Get the LED setup
           serialSendData("getLEDSetup", result, 4); // Send the results back over serial
-
-
-
 
   } else if (command == "switchLEDTimed"){
           // Command used to turn a LED on for a certain amount of time. Note this requires you to set a time for how long you want it on.
@@ -1061,7 +1081,8 @@ void executeSerialCommand(String command, String commandString){
             return;
           }
           switchLEDTimed(arg0, arg1, true); // Switch the LED - note we are always telling it on in this case (third flag). We could also make this allow a fast-off mode if we wanted and this is implemented in LEDDriver but needs careful handling to avoid messing up NumberLEDsBeingTimed
-    
+          serialSend(command, arg0);
+
   } else if (command == "switchLED"){
           // Command used to just switch a LED on and leave it on.
           // Argument 0 is the LED number from 1 to 8
@@ -1077,6 +1098,18 @@ void executeSerialCommand(String command, String commandString){
             return;
           }
           switchLEDDirect(arg0, arg1); // Switch the LED as instructed
+          serialSend(command, arg0);
+
+  } else if (command == "disableAllLEDs"){
+          if (systemEnable == false  || LEDAttached == false){ // If stuff is off you shouldnt be messing with this buddy
+            raiseError("Cant switch LED while system disabled or if LED board isnt there!");
+            return;
+          }
+          for (int i=1; i<=8; i++){
+            switchLEDDirect(i, false); // Switch the LED as instructed
+          }
+          serialSend(command, 1);
+
   } else if (command == "measureLED"){
           // Command used to measure the LED current and optical power output when it is on/in a given state.
           
@@ -1102,15 +1135,26 @@ void executeSerialCommand(String command, String commandString){
           serialSend("measurePhotodiode", result); // Send the result back over serial
   
   } else if (command == "systemEnable"){ // 
-        enableSystem(true); // Enable the system. 
+          enableSystem(true); // Enable the system. 
+
   } else if (command == "systemDisable"){ //
-       enableSystem(false); // Disable the system including turning everything off. 
+          enableSystem(false); // Disable the system including turning everything off.
+
   } else if (command == "setupFilterWheel"){
-    // todo: Set up filter wheel if needed
+          // todo: Set up filter wheel if needed
+          raiseError("Not implemented");
+          return;
+
   } else if (command == "setupDMD"){
-    // todo: Set up DMD if needed
+          // todo: Set up DMD if needed
+          raiseError("Not implemented");
+          return;
+
   } else if (command == "setupLEDFOrImaging"){ // Set up the LED for imaging i.e. tell the system which ones to turn on with each frame and what intensity.
-    // todo: Set up LED if needed
+          // todo: Set up LED if needed
+          raiseError("Not implemented");
+          return;
+
   } else if (command == "debug"){
     // digitalWrite(LED_1_Enable, HIGH);
 
