@@ -6,7 +6,7 @@ from typing import List, Union
 from termios import error as TermiosError
 
 FORMATTER = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
-LOGGING_LEVEL = logging.WARNING
+LOGGING_LEVEL = logging.DEBUG
 LOGGER = logging.getLogger(__name__)
 for handler in LOGGER.handlers:
     LOGGER.removeHandler(handler)
