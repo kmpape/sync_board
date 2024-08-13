@@ -1,3 +1,4 @@
+from enum import Enum
 import logging
 import re
 import time
@@ -22,6 +23,16 @@ LOGGER.propagate = False
 # regex search string that can handle scientific notation, e.g. 1.2 -> 1.2, 1.2e-1 -> 0.12, 1.2e2 -> 120
 float_rgx = re.compile(r'[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?')
 
+class SignalMode(Enum):
+    ADC = 0
+    DAC = 1
+    GPIO = 2
+    MAGDAC = 3
+    MAGADC = 4
+    MAGHALL_READ = 5  # read the hall sensor in mT
+    MAGCURR_WRITE = 6 # set the magnet current calibrated to 0
+    MAGHALL_WRITE = 7 # set the magnet current in mT based on Hall calibration
+    DO = 8
 
 class SyncBoardController:
     LED_ID = [1, 2, 3, 4, 7]
@@ -238,8 +249,23 @@ class SyncBoardController:
         # TODO
         return
 
-    def setup_signal_mode(self, index: int, repeat: int, dac: int, channel: int):
-        self.send_command(Command.format(Command.SETUP_SIGNAL_MODE, index, repeat, dac, channel))
+    def write_do(self, channel: int, state: int):
+        self.send_command(Command.format(Command.WRITE_DO, channel, state))
+
+    def setup_signal_mode(self, index: int, repeat: int, mode: SignalMode, options: int):
+        self.send_command(Command.format(Command.SETUP_SIGNAL_MODE, index, repeat, mode.value, options))
+
+    def setup_signal_dac(self, index: int, vals, timings):
+        '''
+        index: int - signal index
+        vals: list - list of values to be sent
+        timings: list - list of timings for each value
+        '''
+        num_vals = len(vals)
+
+        # make a list of vals, timings interleaved
+        vals = [item for sublist in zip(vals, timings) for item in sublist]
+        self.send_command(Command.format(Command.SETUP_SIGNAL_DAC, index, num_vals, *vals))
 
     def start_signal(self, index: int):
         self.send_command(Command.format(Command.START_SIGNAL, index))
