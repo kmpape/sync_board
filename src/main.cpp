@@ -21,8 +21,12 @@ enum SIGNALMODE {
   MAGCURR_WRITE = 6, // set the magnet current calibrated to 0
   MAGHALL_WRITE = 7, // set the magnet current in mT based on Hall calibration
   DO = 8,
+  CONDUCTOR = 9,  // This is a signal that is used to conduct other signals.
+  LED = 10,       // limited to lower powers 
+  LED_TIMED = 11, // allows for higher power
+  DO_TIMED = 12,
 };
-u_int SIGNALMODES = 9; // Remember to update this if updating above enum
+u_int SIGNALMODES = 13; // Remember to update this if updating above enum
 
 // Debug mode and various parameters
 bool debugmode = true; // Set to true to enable debug mode. This will do some extra things. false for normal operation.
@@ -94,11 +98,12 @@ const int heartbeatTimeout = 100; // How often we want the heartbeat to pulse in
 int heartbeatTriggerTime = 0; // When we last flipped the heartbeat.
 
 // Structure for dealing with various signals that require timed actions. Examples are ADC recording, DAC writing, GPIO toggling and so on.
-const int numSignals = 2; // How many timed signals are there.
+const int numSignals = 5; // How many timed signals are there.
 int signalActive[numSignals] = {false}; // Flag to indicate if that signal is active.
 bool signalRepeat[numSignals] = {false}; // If you should make it repeat. This works for mode 0 but not for mode 1...
 int signalMode[numSignals] = {0}; // 0 = ADC Recording, 1 = DAC Writing, 2 = GPIO doing something? 
-int signalOptions[numSignals] = {0}; // Options for the signal. For ADC this is the channel, for DAC this is the pin, for GPIO this is something else.
+uint32_t signalOptions[numSignals] = {0}; // Options for the signal. For ADC this is the channel, for DAC this is the pin, for GPIO this is something else. For conductor this is a bit mask of which other signals to call.
+bool signalIsSlave[numSignals] = {false}; // If this signal is a slave to another signal. This means it will only run if the master signal is active.
 
 int signalTimeout[numSignals] = {0}; // How long to next action in microseconds. Note leave this at 0 if it is not being used.
 int signalTriggerTime[numSignals] = {0}; // When we last flipped the signal in microseconds.
@@ -112,6 +117,50 @@ int signalTiming[numSignals][signalMaxLength] = {-1}; // The timing buffers in m
 ///// LED parameters - mostly defined in LEDDriver.cpp.
 int NumberLEDsBeingTimed = 0; // Flag to indicate if at least one LED is on and being timed, used in the triggering sectionof the code here. We try to handle all the LED stuff in its driver
 // But include this here for syncronisation purposes.
+
+
+///// DO parameters
+int DOTimeout[4] = {0}; // Array to store the timeout for each DO
+int DOTriggerTime[4] = {0}; // Array to store the trigger time for each DO
+int NumDOBeingTimed = 0; // Number of DOs being timed
+
+// Handles triggers that need to do a pulse,
+// e.g. the camera which uses a rising edge
+void DOTimingHandler() {
+  for (int i = 0; i < 4; i++) {
+    if (DOTimeout[i] > 0) { // This should be non-zero if the DO is being timed
+      if (micros() - DOTriggerTime[i] > DOTimeout[i]) {
+        digitalWriteFast(D_OUT_1 + i, LOW); // Turn off the DO
+        DOTimeout[i] = 0; // Reset the timeout
+        NumDOBeingTimed--; // Decrement the number of DOs being timed
+      }
+    }
+  }
+  if (NumDOBeingTimed < 0) {
+    raiseError("Number of DOs being timed is negative");
+  }
+}
+
+void switchDOTimed(int DO, int time) {
+  // DO = 1, 2, 3, 4
+  // time ON in milliseconds
+  if (DO < 1 || DO > 4) {
+    raiseError("DO number out of range");
+    return;
+  }
+  if (time < 0) {
+    raiseError("Time out of range");
+    return;
+  }
+  if (DOTimeout[DO - 1] > 0) {
+    raiseError("DO already being timed");
+    return;
+  }
+  digitalWriteFast(D_OUT_1 + DO - 1, HIGH); // Turn on the DO
+  DOTimeout[DO - 1] = time * 1000; // Set the timeout
+  DOTriggerTime[DO - 1] = micros(); // Record the time we triggered the DO
+  NumDOBeingTimed++; // Increment the number of DOs being timed
+}
 
 
 void factoryReset(){
@@ -434,6 +483,15 @@ void signalStopAndBackToStart(int signalIndex){
       signalPosition[signalIndex] = -1; // Reset the position to the start of the buffer so it can run again.
       signalTriggerTime[signalIndex] = 0; // Reset the trigger time to 0 so it can run again.
       signalTimeout[signalIndex] = 0; // Reset the timeout to 0 so it can run again.
+
+      // If it is the conductor signal then need to deactivate the other signals.
+      if (signalMode[signalIndex] == SIGNALMODE::CONDUCTOR){
+        for (int i=0; i<numSignals; i++){
+          if ((signalOptions[signalIndex] & (1 << i)) && signalIsSlave[i]) { // If the bit is set then we need to deactivate the signal.
+            signalStopAndBackToStart(i);
+          }
+        }
+      }
 }
 
 void signalResetAndStart(int signalIndex){
@@ -449,6 +507,15 @@ void signalResetAndStart(int signalIndex){
       }
     }
     signalActive[signalIndex] = true; // Flag to indicate that the signal is active.
+
+    // If it is the conductor signal then need to activate the other signals.
+    if (signalMode[signalIndex] == SIGNALMODE::CONDUCTOR){
+      for (int i=0; i<numSignals; i++){
+        if ((signalOptions[signalIndex] & (1 << i)) && signalIsSlave[i]) { // If the bit is set then we need to activate the signal.
+          signalActive[i] = true;
+        }
+      }
+    }
 }
 
 void signalHandler(int signalIndex){
@@ -511,6 +578,21 @@ void signalHandler(int signalIndex){
     setMagnetCurrent(signalOptions[signalIndex], signalData[signalIndex][index]); //Set the DAC value of the specified pin in signalOptions to the value in the signalData.
   } else if (signalMode[signalIndex] == SIGNALMODE::DO){
     digitalWriteFast(signalOptions[signalIndex], signalData[signalIndex][index]);
+  } else if (signalMode[signalIndex] == SIGNALMODE::LED) {
+    switchLEDDirect(signalOptions[signalIndex], signalData[signalIndex][index] > 0.0);
+  } else if (signalMode[signalIndex] == SIGNALMODE::LED_TIMED) {
+    if (signalData[signalIndex][index] > 0)
+      switchLEDTimed(signalOptions[signalIndex], signalData[signalIndex][index], true);
+  } else if (signalMode[signalIndex] == SIGNALMODE::DO_TIMED) {
+    if (signalData[signalIndex][index] > 0)
+      switchDOTimed(signalOptions[signalIndex], signalData[signalIndex][index]);
+  } else if (signalMode[signalIndex] == SIGNALMODE::CONDUCTOR){
+    // If we are in conductor mode we need to trigger other signals. We do this by setting the signalOptions to a bit mask of which signals to trigger.
+    for (int i=0; i<numSignals; i++){
+      if ((signalOptions[signalIndex] & (1<<i)) && signalActive[i] && signalIsSlave[i]) { // If the bit is set then we trigger that signal.
+        signalHandler(i);
+      }
+    }
   } else {
     raiseError("SignalHandler error - not recognised signal mode");
   }
@@ -563,6 +645,7 @@ void executeSerialCommand(String command, String commandString){
               bool sRepeat = argGetBool(commandString,1); // If it should repeat (True) or not (false)
               int sMode = argGetInt(commandString,2); // Mode, 0= ADC, 1 = DAC, 2 = GPIO
               int sOptions = argGetInt(commandString,3); // Options for the signal. For ADC this is the channel, for DAC this is the pin, for GPIO this is something else.
+              bool isSlave = argGetBool(commandString, 4); // If this signal is a slave to another signal. This means it will only run if the master signal is active.
               if (sIndex<0 || sIndex>=numSignals){ // If the signal index is out of range then we have a problem.
                 raiseError("Signal index out of range");
                 return;
@@ -578,6 +661,7 @@ void executeSerialCommand(String command, String commandString){
               // Now we can set stuff
               signalRepeat[sIndex] = sRepeat;
               signalMode[sIndex] = sMode;
+              signalIsSlave[sIndex] = isSlave;
               if (sMode == SIGNALMODE::DO) {
                 if (sOptions == 1)
                   signalOptions[sIndex] = D_OUT_1;
@@ -596,7 +680,7 @@ void executeSerialCommand(String command, String commandString){
               }
               serialSend(command, 1);
         
-  } else if (command == "setupSignalDAC"){
+  } else if (command == "setupSignalOutput"){
               //Used to set up the data in a DAC output signal to generate AWG. This could also be used for GPIO output signals. This will be a series of timings and values. We can do this if system is enabled but not while signal is active.
               //Note incoming data should be signalID/numvalues/value/timing/value/timing with the number of values an timing dependent on numvalues.
               int sIndex = argGetInt(commandString,0); // which signal
@@ -617,15 +701,61 @@ void executeSerialCommand(String command, String commandString){
                   (signalMode[sIndex]!=SIGNALMODE::MAGDAC) && 
                   (signalMode[sIndex]!=SIGNALMODE::MAGHALL_WRITE) &&
                   (signalMode[sIndex]!=SIGNALMODE::MAGCURR_WRITE) &&
-                  (signalMode[sIndex]!=SIGNALMODE::DO)){ // If we arent in DAC mode then we have a problem.
-                raiseError("Signal mode is not DAC");
+                  (signalMode[sIndex]!=SIGNALMODE::DO) && 
+                  (signalMode[sIndex]!=SIGNALMODE::LED) && 
+                  (signalMode[sIndex]!=SIGNALMODE::LED_TIMED) &&
+                  (signalMode[sIndex]!=SIGNALMODE::DO_TIMED)){ // If we arent in DAC mode then we have a problem.
+                raiseError("Signal mode is not output");
                 return;
               }
               //Now we get the number of value and timing pairs we expect based on sNumVals
               for (int i=0; i<sNumVals; i++){
                 float sValue = argGetFloat(commandString,2+i*2); // Get the value
                 signalData[sIndex][i] = sValue; // Set the value
+                
+                // Timing doesn't matter if it's a slave signal
+                if (signalIsSlave[sIndex]) {
+                  signalTiming[sIndex][i] = 0.0;  
+                  continue;
+                }
                 float sTiming = argGetFloat(commandString,2+i*2 + 1); // Get the timing in miliseconds
+                int sTimestep = int(sTiming*1000.0); // Convert to int and round to nearest microsceond.
+                if (sTimestep<=0 && sTimestep!=-1){ // If the timing is out of range then we have a problem.
+                  raiseError("That's a weird timing value you sent to setupSignalOutput friend. Your output setup will not be as you anticipated so fix it!");
+                  return;
+                } else if ((sTimestep<10) && (signalMode[sIndex]==SIGNALMODE::DAC)){
+                  raiseError("The DAC can only update at ~100kHz so you need to wait at least 10us between updates. You might want to increase the timing. ");
+                  // Note we still allow this but basically if they have gone faster than this it wont output the signal they asked for.
+                  // Note also that the DAC output amplifiers have a limited slew rate of approximately 1V/us so if you are putting large signals at 100khz you may have some rounding of them...!
+                }
+                signalTiming[sIndex][i] = sTimestep; // Set the timing
+              }
+              // Finally we set any remaining values to -1 to indicate they are not used.
+              for (int i=sNumVals; i<signalMaxLength; i++){
+                signalData[sIndex][i] = 0.0;
+                signalTiming[sIndex][i] = -1;
+              }
+              serialSend(command, 1);
+  } else if (command == "setupSignalConductor") {
+              int sIndex = argGetInt(commandString,0); // which signal
+              int sNumVals = argGetInt(commandString,1); // How many values we are receiving.
+              if (sIndex<0 || sIndex>=numSignals){ // If the signal index is out of range then we have a problem.
+                raiseError("Signal index out of range");
+                return;
+              }
+              if (signalActive[sIndex] == true){
+                raiseError("Cant setup signal " + String(sIndex) + " while it is active");
+                return;
+              }
+              if (sNumVals>signalMaxLength || sNumVals<0){ // If the number of values is out of range then we have a problem.
+                raiseError("Number of values out of range permissable, you might need to adjust signalMaxLength in main.cpp");
+                return;
+              }
+
+              for (int i=0; i<sNumVals; i++){
+                signalData[sIndex][i] = 0.0; // Set all the data to zero. This could be used for ADC measurements. (Not tested!)
+
+                float sTiming = argGetFloat(commandString,2+i); // Get the timing in miliseconds
                 int sTimestep = int(sTiming*1000.0); // Convert to int and round to nearest microsceond.
                 if (sTimestep<=0 && sTimestep!=-1){ // If the timing is out of range then we have a problem.
                   raiseError("That's a weird timing value you sent to setupSignalDAC friend. Your DAC setup will not be as you anticipated so fix it!");
@@ -643,6 +773,7 @@ void executeSerialCommand(String command, String commandString){
                 signalTiming[sIndex][i] = -1;
               }
               serialSend(command, 1);
+
 
   } else if (command == "setupSignalADC"){
               //Used to set up ADC to read a series of values. We can do this if system is enabled but not while signal is active.
@@ -1241,11 +1372,6 @@ void executeSerialCommand(String command, String commandString){
   }
 }
 
-
-
-
-
-
 void setup() {
 
   
@@ -1309,11 +1435,15 @@ void loop() {
     if (NumberLEDsBeingTimed > 0){ // If at least one of the LEDs is currently being timed we might have to do something to turn it off.
       LEDTimingHandler(); // Call the function that handles the LED timing which is inside LEDDriver. It handles how many LEDs are being timed.
     }
+    // Handle DOs
+    if (NumDOBeingTimed > 0){ // If at least one of the DOs is currently being timed we might have to do something to turn it off.
+      DOTimingHandler(); // Call the function that handles the DO timing which is inside this file. It handles how many DOs are being timed.
+    }
 
     // Handle other timers
     for (int i = 0; i < numSignals; i++) {
       //check if signal is active
-      if (signalActive[i] == true){
+      if (signalActive[i] == true && signalIsSlave[i] == false){
         //check if we have reached the time required for triggering.
         if (micros() - signalTriggerTime[i] > signalTimeout[i]){
           signalHandler(i); // Call the function that handles the signals.

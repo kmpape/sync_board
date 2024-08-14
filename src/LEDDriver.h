@@ -3,6 +3,8 @@
 
 #include <Arduino.h>
 
+const int numLEDs = 8; //Number of LEDs on the LED board.
+
 // Function prototypes
 void resetLEDs(bool hardwareActive = true);
 float readLEDOutput(int channel, bool current = true);

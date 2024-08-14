@@ -1,4 +1,3 @@
-#include <Arduino.h>
 #include "PinOut.h"
 #include "GlobalVariables.h"
 #include "SerialController.h"
@@ -8,11 +7,11 @@
 #include "ICDrivers.h"
 #include "IOController.h"
 #include "MemoryController.h"
+#include "LEDDriver.h"
 
 //Note everything in this function should be conditional on global variable LEDAttacehd.
 // Note this function never actually stores whether LEDs are off or on at a given time - this SHOULD be OK but could be added if need.
 
-const int numLEDs = 8; //Number of LEDs on the LED board.
 bool LEDOutputCurrent[numLEDs] =  {true}; //This is the state of the LED output. True means current is the output voltage the ADC can read, false is optical power.
 bool LEDFeedbackCurrent[numLEDs] =  {true}; //This is the signal being used to control the LED. True means current is the feedback signal the ADC can read, false is optical power.
 

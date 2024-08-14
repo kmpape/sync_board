@@ -33,9 +33,20 @@ class SignalMode(Enum):
     MAGCURR_WRITE = 6 # set the magnet current calibrated to 0
     MAGHALL_WRITE = 7 # set the magnet current in mT based on Hall calibration
     DO = 8
+    CONDUCTOR = 9
+    LED = 10
+    LED_TIMED = 11
+    DO_TIMED = 12
+
+class LED_ID(int, Enum):
+    # LED_385_NM = 5 not sure which one this is
+    LED_450_NM = 1
+    LED_515_NM = 2
+    LED_565_NM = 3
+    LED_645_NM = 4
 
 class SyncBoardController:
-    LED_ID = [1, 2, 3, 4, 7]
+    # LED_ID = [1, 2, 3, 4, 7]
     LED_MAX_CURRENT = {1: 10.0, 2: 8.0, 3: 12.0, 4: 8.0, 7: 6.0}
     DEFAULT_POLL_INTERVAL_S = 0.01
 
@@ -52,8 +63,8 @@ class SyncBoardController:
         "Set to true after initialise(). Set to false after finalise()."
 
         # LED configurations
-        self._led_configs: Dict[int, Dict[str, Union[int, float, None, str]]] = {
-            led_id: {'mode': None, 'intensity': None, 'status': None, 'stop_time': None} for led_id in self.LED_ID
+        self._led_configs: Dict[LED_ID, Dict[str, Union[int, float, None, str]]] = {
+            led_id: {'mode': None, 'intensity': None, 'status': None, 'stop_time': None} for led_id in LED_ID.__members__.values()
         }
 
     @classmethod
@@ -84,14 +95,14 @@ class SyncBoardController:
     
     def calibrate_led(
             self,
-            led_id: int,
+            led_id: LED_ID,
             max_current: Optional[float] = None,
     ):
-        if led_id not in self.LED_ID:
-            raise ValueError(f"LED ID {led_id} not available. Must be in {self.LED_ID}.")
+        # if led_id not in self.LED_ID:
+        #     raise ValueError(f"LED ID {led_id} not available. Must be in {self.LED_ID}.")
         max_current = self.LED_MAX_CURRENT[led_id] if max_current is None else max_current
         LOGGER.info(f"Calibrating LED {led_id} with max current {max_current}.")
-        self.send_command(Command.format(Command.CALIBRATE_LED, led_id, max_current))
+        self.send_command(Command.format(Command.CALIBRATE_LED, led_id.value, max_current))
 
     def calibrate_magnet(self):
         response = self.send_command(Command.format(Command.CALIBRATE_MAGNET), wait_time=5)
@@ -106,25 +117,25 @@ class SyncBoardController:
 
     def disable_led(
             self,
-            led_id: Optional[int] = None,
+            led_id: Optional[LED_ID] = None,
     ):
-        if (led_id is not None) and (led_id not in self.LED_ID):
-            LOGGER.warning(f"LED ID {led_id} unknown. Disabling all LEDs.")
-            led_id = None
+        # if (led_id is not None) and (led_id not in self.LED_ID):
+        #     LOGGER.warning(f"LED ID {led_id} unknown. Disabling all LEDs.")
+        #     led_id = None
         if led_id is None:
             self.disable_all_leds()
         else:
-            self.send_command(Command.format(Command.SWITCH_LED, led_id, 0))
+            self.send_command(Command.format(Command.SWITCH_LED, led_id.value, 0))
             self._led_configs[led_id]['status'] = "off"
 
     def disable_all_leds(self):
         self.send_command(Command.format(Command.DISABLE_ALL_LEDS))
-        for _led_id in self.LED_ID:
+        for _led_id in LED_ID.__members__.values():
             self._led_configs[_led_id]['status'] = "off"
 
     def enable_led(
             self,
-            led_id: int,
+            led_id: LED_ID,
             intensity: float = 0.1,
             duration: Optional[float] = None,
     ):
@@ -140,16 +151,16 @@ class SyncBoardController:
         -------
 
         """
-        if led_id not in self.LED_ID:
-            raise ValueError(f"LED ID {led_id} not available. Must be in {self.LED_ID}.")
+        # if led_id not in self.LED_ID:
+        #     raise ValueError(f"LED ID {led_id} not available. Must be in {self.LED_ID}.")
         if intensity > 0.29 or intensity < 0:
             LOGGER.warning(f"Received intensity {intensity} for enable_led.")
         self.setup_led(led_id=led_id, intensity=intensity)
         if duration is None:
-            self.send_command(Command.format(Command.SWITCH_LED, led_id, 1))
+            self.send_command(Command.format(Command.SWITCH_LED, led_id.value, 1))
             self._led_configs[led_id]['status'] = "on"
         else:
-            self.send_command(Command.format(Command.SWITCH_LED_TIMED, led_id, duration))
+            self.send_command(Command.format(Command.SWITCH_LED_TIMED, led_id.value, duration))
             self._led_configs[led_id]['status'] = "timed"
             self._led_configs[led_id]['stop_time'] = time.time() + duration * 1000.0
 
@@ -179,8 +190,8 @@ class SyncBoardController:
         return self._is_initialised
 
     def led_is_on(self, led_id: int):
-        if led_id not in self.LED_ID:
-            raise ValueError(f"LED ID {led_id} not available. Must be in {self.LED_ID}.")
+        # if led_id not in self.LED_ID:
+        #     raise ValueError(f"LED ID {led_id} not available. Must be in {self.LED_ID}.")
         return self._led_configs[led_id]['status'] == 'on' or (self._led_configs[led_id]['status'] == 'timed' and
                                                                time.time() > self._led_configs[led_id]['stop_time'])
 
@@ -210,7 +221,7 @@ class SyncBoardController:
 
     def setup_led(
             self,
-            led_id: int,
+            led_id: LED_ID,
             feedback_mode: int = 0,
             intensity: float = 0.1,
     ):
@@ -229,17 +240,18 @@ class SyncBoardController:
         if led_id is None:
             LOGGER.debug(f"Nothing to setup for led_id {led_id}.")
             return
-        if led_id not in self.LED_ID:
-            raise ValueError(f"LED ID {led_id} not available. Must be in {self.LED_ID}.")
+        # if led_id not in self.LED_ID:
+        #     raise ValueError(f"LED ID {led_id} not available. Must be in {self.LED_ID}.")
         if self._is_equal_led_config(led_id=led_id, feedback_mode=feedback_mode, intensity=intensity):
             LOGGER.debug(f"LED {led_id} already configured: {self._led_configs[led_id]}")
             return
-        self.send_command(Command.format(Command.SETUP_LED, led_id, feedback_mode, intensity))
+        print("Setup LED ", led_id)
+        self.send_command(Command.format(Command.SETUP_LED, led_id.value, feedback_mode, intensity))
         self._led_configs[led_id]['mode'] = feedback_mode
         self._led_configs[led_id]['intensity'] = intensity
 
     def _setup_leds(self):
-        for _led_id in self.LED_ID:
+        for _led_id in LED_ID.__members__.values():
             self.setup_led(led_id=_led_id)
 
     def setup_magnet(self):
@@ -252,20 +264,25 @@ class SyncBoardController:
     def write_do(self, channel: int, state: int):
         self.send_command(Command.format(Command.WRITE_DO, channel, state))
 
-    def setup_signal_mode(self, index: int, repeat: int, mode: SignalMode, options: int):
-        self.send_command(Command.format(Command.SETUP_SIGNAL_MODE, index, repeat, mode.value, options))
+    def setup_signal_mode(self, index: int, repeat: int, mode: SignalMode, options: int, is_slave: bool = False):
+        self.send_command(Command.format(Command.SETUP_SIGNAL_MODE, index, repeat, mode.value, options, is_slave))
 
-    def setup_signal_dac(self, index: int, vals, timings):
+    def setup_signal_output(self, index: int, vals, timings):
         '''
         index: int - signal index
-        vals: list - list of values to be sent
-        timings: list - list of timings for each value
+        vals: list - list of values to be sent 
+            For LED_TIMED, this is a list of positive and negative durations, where positive means on and negative means do nothing
+            Make sure that the LED durations are shorter than the sequence durations else will attempt to turn on LED when it is already on
+        timings: list - list of timings for each value in ms
         '''
         num_vals = len(vals)
-
         # make a list of vals, timings interleaved
         vals = [item for sublist in zip(vals, timings) for item in sublist]
-        self.send_command(Command.format(Command.SETUP_SIGNAL_DAC, index, num_vals, *vals))
+        self.send_command(Command.format(Command.SETUP_SIGNAL_OUT, index, num_vals, *vals))
+
+    def setup_signal_conductor(self, index: int, timings: List[float]):
+        num_vals = len(timings)
+        self.send_command(Command.format(Command.SETUP_SIGNAL_CONDUCTOR, index, num_vals, *timings))
 
     def start_signal(self, index: int):
         self.send_command(Command.format(Command.START_SIGNAL, index))
@@ -278,12 +295,12 @@ class SyncBoardController:
 
     def _is_equal_led_config(
             self,
-            led_id: int,
+            led_id: LED_ID,
             feedback_mode: int = 0,
             intensity: float = 0.1,
     ) -> bool:
         return self._led_configs[led_id]['mode'] == feedback_mode and \
             self._led_configs[led_id]['intensity'] == intensity
 
-    def _led_is_setup(self, led_id: int):
+    def _led_is_setup(self, led_id: LED_ID):
         return self._led_configs[led_id]['mode'] is not None and self._led_configs[led_id]['intensity'] is not None
