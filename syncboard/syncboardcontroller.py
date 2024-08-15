@@ -37,6 +37,7 @@ class SignalMode(Enum):
     LED = 10
     LED_TIMED = 11
     DO_TIMED = 12
+    GPIO_WRITE = 13
 
 class LED_ID(int, Enum):
     # LED_385_NM = 5 not sure which one this is
@@ -263,6 +264,9 @@ class SyncBoardController:
 
     def write_do(self, channel: int, state: int):
         self.send_command(Command.format(Command.WRITE_DO, channel, state))
+
+    def write_gpio(self, gpio_num: int, state: int):
+        self.send_command(Command.format(Command.WRITE_GPIO, gpio_num, state))
 
     def setup_signal_mode(self, index: int, repeat: int, mode: SignalMode, options: int, is_slave: bool = False):
         self.send_command(Command.format(Command.SETUP_SIGNAL_MODE, index, repeat, mode.value, options, is_slave))

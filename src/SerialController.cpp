@@ -16,7 +16,7 @@ bool serialReady = true; //Flag to say if we are free to communicate or not. Cur
 // A caution for this is that if we send commands from other areas while we are thinking we aren't ready, they wont get out! i.e. it all needs to be in main loop.
 
 //Defining some objects to store incoming data temporarily.
-const int max_serial_length_chars = 1000; // Define a constant for the maximum number of characters in the incoming data
+const int max_serial_length_chars = 10000; // Define a constant for the maximum number of characters in the incoming data
 char incomingCommand[max_serial_length_chars]; // Define a char array to store the incoming data
 String receivedCommand; // Define a string to store the above data once converted
 

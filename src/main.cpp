@@ -14,7 +14,7 @@
 enum SIGNALMODE {
   ADC = 0,
   DAC = 1,
-  GPIO = 2,
+  GPIO_READ = 2, // NOT IMPLEMENTED
   MAGDAC = 3,
   MAGADC = 4,
   MAGHALL_READ = 5,  // read the hall sensor in mT
@@ -25,8 +25,9 @@ enum SIGNALMODE {
   LED = 10,       // limited to lower powers 
   LED_TIMED = 11, // allows for higher power
   DO_TIMED = 12,
+  GPIO_WRITE = 13,
 };
-u_int SIGNALMODES = 13; // Remember to update this if updating above enum
+u_int SIGNALMODES = 14; // Remember to update this if updating above enum
 
 // Debug mode and various parameters
 bool debugmode = true; // Set to true to enable debug mode. This will do some extra things. false for normal operation.
@@ -109,7 +110,7 @@ int signalTimeout[numSignals] = {0}; // How long to next action in microseconds.
 int signalTriggerTime[numSignals] = {0}; // When we last flipped the signal in microseconds.
 int signalPosition[numSignals] = {-1}; // The current position in the buffer. This is incremented each time we add a new value. Starts at -1 so we can begin with new value at 0
 
-const int signalMaxLength = 100; // How long each buffer is. You are making even the shorter ones this long but yolo.
+const int signalMaxLength = 500; // How long each buffer is. You are making even the shorter ones this long but yolo.
 float signalData[numSignals][signalMaxLength]; // The data buffers. Note this could be used to store values (ADC mode) or record values (DAC mode).
 int signalTiming[numSignals][signalMaxLength] = {-1}; // The timing buffers in microseconds if needed - says when actions should be done. -1 means you stop there.
 
@@ -568,8 +569,11 @@ void signalHandler(int signalIndex){
       signalData[signalIndex][index] = hallValue; // Record the ADC value in the buffer.
   } else if (signalMode[signalIndex] == SIGNALMODE::DAC){ // If we are writing DAC
     setDAC(signalOptions[signalIndex], signalData[signalIndex][index]); //Set the DAC value of the specified pin in signalOptions to the value in the signalData.
-  } else if (signalMode[signalIndex] == SIGNALMODE::GPIO){ // If we are doing GPIO
+  } else if (signalMode[signalIndex] == SIGNALMODE::GPIO_READ){ // If we are doing GPIO
     //Todo something if you want to implement signals to GPIO ports.
+    raiseError("GPIO read not implemented yet");
+  } else if (signalMode[signalIndex] == SIGNALMODE::GPIO_WRITE){ // If we are doing GPIO
+    digitalWriteFast(signalOptions[signalIndex], signalData[signalIndex][index]);
   } else if (signalMode[signalIndex] == SIGNALMODE::MAGDAC){
     setMagDACI2C(signalOptions[signalIndex], signalData[signalIndex][index]); //Set the DAC value of the specified pin in signalOptions to the value in the signalData.
   } else if (signalMode[signalIndex] == SIGNALMODE::MAGHALL_WRITE){
@@ -675,6 +679,16 @@ void executeSerialCommand(String command, String commandString){
                   raiseError("Invalid DO pin");
                   return;
                 }
+              } else if (sMode == SIGNALMODE::GPIO_WRITE) {
+                // In this case assume that sOptions represents the GPIO _name_ i.e. 25 for GPIO25
+                int gpioID = GPIOPinMap2(sOptions);
+                int gpioPin = GPIOPinMap3(gpioID);
+
+                GPIOInput[gpioID] = false;  // Set the GPIO output
+                GPIOFunction[gpioID] = 0;   // Set the GPIO function to digital
+                GPIOEnabled[gpioID] = true; // Set the GPIO enabled
+
+                signalOptions[sIndex] = gpioPin;
               } else {
                 signalOptions[sIndex] = sOptions;
               }
@@ -704,7 +718,8 @@ void executeSerialCommand(String command, String commandString){
                   (signalMode[sIndex]!=SIGNALMODE::DO) && 
                   (signalMode[sIndex]!=SIGNALMODE::LED) && 
                   (signalMode[sIndex]!=SIGNALMODE::LED_TIMED) &&
-                  (signalMode[sIndex]!=SIGNALMODE::DO_TIMED)){ // If we arent in DAC mode then we have a problem.
+                  (signalMode[sIndex]!=SIGNALMODE::DO_TIMED) &&
+                  (signalMode[sIndex]!=SIGNALMODE::GPIO_WRITE)){ // If we arent in an output mode then we have a problem.
                 raiseError("Signal mode is not output");
                 return;
               }
