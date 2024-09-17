@@ -91,7 +91,7 @@ class SyncBoardController:
     
     def read_hall(self, hall_id: int) -> float:
         response = self.send_command(Command.format(Command.READ_HALL, hall_id), wait_time=0.1)
-        print(response)
+        # print(response)
         return float(float_rgx.search(response).group())
     
     def calibrate_led(

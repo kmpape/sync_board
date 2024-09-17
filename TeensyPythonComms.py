@@ -1,7 +1,7 @@
 import serial
 import time
 import matplotlib.pyplot as plt
-ser = serial.Serial('/dev/ttyACM0', 2000000, timeout=0.001)
+ser = serial.Serial('COM3', 2000000, timeout=0.001)
 data = []
 
 start_character="$"
@@ -796,59 +796,64 @@ def setMagnetField(NC=1, field=0.0):
     ser.write(command.encode())  # Send the command
     getSerialResponses(0.2)
 
+
+# enableSystem()
+# scanI2c()
+# disableSystem()
+
 # measureMagnetZeroCurrent()
 
-disableSystem()
-time.sleep(1.0)
-input("Disabled system. Press enter to continue...")
-attachMagnetBoard()
-enableSystem()
-setupMagnetBoard()
-calibrateMagnet()
+# disableSystem()
+# time.sleep(1.0)
+# input("Disabled system. Press enter to continue...")
+# attachMagnetBoard()
+# enableSystem()
+# setupMagnetBoard()
+# calibrateMagnet()
 
-calibrateHall(0)
+# calibrateHall(0)
 
-input("Start sweep. Press enter to continue...")
-
-enableMagnet(True)
-
-while (x := input("Input e for enable, d for disable, float for setField, q to quit: ")) != "q":
-    if x == "e":
-        enableMagnet(True)
-    elif x == "d":
-        enableMagnet(False)
-    else:
-        try:
-            field = float(x)
-        except ValueError:
-            print("Invalid input")
-            continue
-        setMagnetField(1, field)
-    readHall(0)
-
-# magSweepTest()
-enableMagnet(False)
-# plt.show()
+# input("Start sweep. Press enter to continue...")
 
 # enableMagnet(True)
-# setMagnetField(1, 0.0)
-# try:
-#     while True:
+
+# while (x := input("Input e for enable, d for disable, float for setField, q to quit: ")) != "q":
+#     if x == "e":
+#         enableMagnet(True)
+#     elif x == "d":
+#         enableMagnet(False)
+#     else:
 #         try:
-#             field = input("Enter magnet field in mT: ")
-#             field = float(field)
+#             field = float(x)
 #         except ValueError:
 #             print("Invalid input")
 #             continue
 #         setMagnetField(1, field)
-#         time.sleep(0.1)
-#         readHall(0)
-# except KeyboardInterrupt:
-#     print("System disabled")
-#     enableMagnet(False)
-#     disableSystem()
+#     readHall(0)
 
-disableSystem()
+# # magSweepTest()
+# enableMagnet(False)
+# # plt.show()
+
+# # enableMagnet(True)
+# # setMagnetField(1, 0.0)
+# # try:
+# #     while True:
+# #         try:
+# #             field = input("Enter magnet field in mT: ")
+# #             field = float(field)
+# #         except ValueError:
+# #             print("Invalid input")
+# #             continue
+# #         setMagnetField(1, field)
+# #         time.sleep(0.1)
+# #         readHall(0)
+# # except KeyboardInterrupt:
+# #     print("System disabled")
+# #     enableMagnet(False)
+# #     disableSystem()
+
+# disableSystem()
 
 # try:
 #     while True:
