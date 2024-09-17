@@ -236,6 +236,14 @@ void switchLEDDirect(int channel, bool on = false, bool force = false){
         }
     }
     switchLED(channel, on);
+    if (on == false){
+        resetLEDTimeout(channel);
+    }
+}
+
+void resetLEDTimeout(int channel) {
+    LEDTimeout[channel-1] = 0; //Reset the timeout
+    NumberLEDsBeingTimed = NumberLEDsBeingTimed -1; //Decrement the number of LEDs being timed.
 }
 
 void switchLEDTimed(int channel, float time = 0.0, bool on = false){
@@ -258,8 +266,7 @@ void switchLEDTimed(int channel, float time = 0.0, bool on = false){
 
     if (on == false){ // If they have asked it to switch off we do all the good hygene of turning it off
         switchLED(channel, false); //Turn LED off
-        LEDTimeout[channel-1] = 0; //Reset the timeout
-        NumberLEDsBeingTimed = NumberLEDsBeingTimed -1; //Decrement the number of LEDs being timed.
+        resetLEDTimeout(channel);
         return;
 
     } else if (on == true && LEDTimeout[channel-1] > 0){ // If they have asked it to switch on but it is already on we do nothing. 
@@ -286,8 +293,7 @@ void switchLEDTimed(int channel, float time = 0.0, bool on = false){
     if (LEDTimeout[channel-1]<100) { // If we are trying to do a very short flash of the LED less than 100us then we will time it here so it can be fairly precise.
         delayMicroseconds(LEDTimeout[channel-1]); //
         switchLED(channel, false); //Turn LED off
-        LEDTimeout[channel-1] = 0; //Reset the timeout
-        NumberLEDsBeingTimed = NumberLEDsBeingTimed -1; //Decrement the number of LEDs being timed.
+        resetLEDTimeout(channel);
         if (LEDTimeout[channel-1] < 10){
             raiseError("You tried to turn a LED on for less than 10us. That is very fast and going to be rather inaccurate...!");
         }
@@ -325,8 +331,9 @@ void LEDTimingHandler(){
         if (LEDTimeout[i] > 0){ // This should be non-zero if the LED is on and being timed.
             if (micros() - LEDTriggerTime[i] > LEDTimeout[i]){
                 switchLED(i+1, false); //Turn LED off
-                LEDTimeout[i] = 0; //Reset the timeout
-                NumberLEDsBeingTimed = NumberLEDsBeingTimed -1; //Decrement the number of LEDs being timed.
+                resetLEDTimeout(i+1);
+//                LEDTimeout[i] = 0; //Reset the timeout
+//                NumberLEDsBeingTimed = NumberLEDsBeingTimed -1; //Decrement the number of LEDs being timed.
             }
         }
     }

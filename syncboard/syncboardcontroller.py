@@ -67,20 +67,6 @@ class SyncBoardController:
         
     def attach_magnet(self):
         self.send_command(Command.format(Command.ATTACH_MAGNET, True))
-
-    def enable_magnet(self, enable: bool = True):
-        self.send_command(Command.format(Command.ENABLE_MAGNET, enable))
-    
-    def set_magnet_current(self, current: float, NC: bool = True):
-        self.send_command(Command.format(Command.SET_MAGNET_CURRENT, int(NC), current))
-        
-    def set_magnet_field(self, field: float, NC: bool = True):
-        self.send_command(Command.format(Command.SET_MAGNET_FIELD, int(NC), field))
-    
-    def read_hall(self, hall_id: int) -> float:
-        response = self.send_command(Command.format(Command.READ_HALL, hall_id), wait_time=0.1)
-        print(response)
-        return float(float_rgx.search(response).group())
     
     def calibrate_led(
             self,
@@ -153,6 +139,9 @@ class SyncBoardController:
             self._led_configs[led_id]['status'] = "timed"
             self._led_configs[led_id]['stop_time'] = time.time() + duration * 1000.0
 
+    def enable_magnet(self, enable: bool = True):
+        self.send_command(Command.format(Command.ENABLE_MAGNET, enable))
+
     def enable_system(self):
         self.send_command(Command.format(Command.SYSTEM_ENABLE))
 
@@ -184,6 +173,11 @@ class SyncBoardController:
         return self._led_configs[led_id]['status'] == 'on' or (self._led_configs[led_id]['status'] == 'timed' and
                                                                time.time() > self._led_configs[led_id]['stop_time'])
 
+    def read_hall(self, hall_id: int) -> float:
+        response = self.send_command(Command.format(Command.READ_HALL, hall_id), wait_time=0.1)
+        print(response)
+        return float(float_rgx.search(response).group())
+
     def read_photodiode(self, channel: int = 8) -> float | None:
         response_str = self.send_command(Command.format(Command.MEASURE_PHOTODIODE, channel), wait_time=1)
         try:
@@ -204,6 +198,12 @@ class SyncBoardController:
 
     def set_dac(self, channel: int, voltage: float):
         self.send_command(Command.format(Command.SET_DAC, channel, voltage))
+
+    def set_magnet_current(self, current: float, NC: bool = True):
+        self.send_command(Command.format(Command.SET_MAGNET_CURRENT, int(NC), current))
+
+    def set_magnet_field(self, field: float, NC: bool = True):
+        self.send_command(Command.format(Command.SET_MAGNET_FIELD, int(NC), field))
 
     def setup_gpio(self, gpio_num: int, enable: int, mode: int, output_state: int):
         self.send_command(Command.format(Command.SETUP_GPIO, gpio_num, enable, mode, output_state))
