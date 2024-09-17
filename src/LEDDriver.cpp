@@ -227,6 +227,7 @@ void switchLED(int channel, bool on = false, bool force = false){
 }
 
 void switchLEDDirect(int channel, bool on = false, bool force = false){
+    Serial.println("Called switchLEDDirect with args channel=" + String(channel) + " on=" + String(on) + " force" + String(force));
     // Basicaly a wrapper for switchLEd if we just want to turn on a LEd permanently. 
     if (on && !force){ //If the level hasnt been set we dont allow the user to turn it on.
         if (LEDLevelSet[channel-1]>=0.3){
