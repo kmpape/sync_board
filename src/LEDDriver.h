@@ -4,6 +4,7 @@
 #include <Arduino.h>
 
 // Function prototypes
+void resetLEDTimeout(int channel);
 void resetLEDs(bool hardwareActive = true);
 float readLEDOutput(int channel, bool current = true);
 void setLEDVoltageOutput(int channel, bool current = true);

@@ -8,6 +8,7 @@
 #include "ICDrivers.h"
 #include "IOController.h"
 #include "MemoryController.h"
+#include "LEDDriver.h"
 
 //Note everything in this function should be conditional on global variable LEDAttacehd.
 // Note this function never actually stores whether LEDs are off or on at a given time - this SHOULD be OK but could be added if need.
