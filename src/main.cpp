@@ -20,8 +20,9 @@ enum SIGNALMODE {
   MAGHALL_READ = 5,  // read the hall sensor in mT
   MAGCURR_WRITE = 6, // set the magnet current calibrated to 0
   MAGHALL_WRITE = 7, // set the magnet current in mT based on Hall calibration
+  DO = 8,
 };
-u_int SIGNALMODES = 8; // Remember to update this if updating above enum
+u_int SIGNALMODES = 9; // Remember to update this if updating above enum
 
 // Debug mode and various parameters
 bool debugmode = true; // Set to true to enable debug mode. This will do some extra things. false for normal operation.
@@ -508,6 +509,8 @@ void signalHandler(int signalIndex){
     setMagnetField(signalOptions[signalIndex], signalData[signalIndex][index]); //Set the DAC value of the specified pin in signalOptions to the value in the signalData.
   } else if (signalMode[signalIndex] == SIGNALMODE::MAGCURR_WRITE){
     setMagnetCurrent(signalOptions[signalIndex], signalData[signalIndex][index]); //Set the DAC value of the specified pin in signalOptions to the value in the signalData.
+  } else if (signalMode[signalIndex] == SIGNALMODE::DO){
+    digitalWriteFast(signalOptions[signalIndex], signalData[signalIndex][index]);
   } else {
     raiseError("SignalHandler error - not recognised signal mode");
   }
@@ -575,7 +578,22 @@ void executeSerialCommand(String command, String commandString){
               // Now we can set stuff
               signalRepeat[sIndex] = sRepeat;
               signalMode[sIndex] = sMode;
-              signalOptions[sIndex] = sOptions;
+              if (sMode == SIGNALMODE::DO) {
+                if (sOptions == 1)
+                  signalOptions[sIndex] = D_OUT_1;
+                else if (sOptions == 2)
+                  signalOptions[sIndex] = D_OUT_2;
+                else if (sOptions == 3)
+                  signalOptions[sIndex] = D_OUT_3;
+                else if (sOptions == 4)
+                  signalOptions[sIndex] = D_OUT_4;
+                else {
+                  raiseError("Invalid DO pin");
+                  return;
+                }
+              } else {
+                signalOptions[sIndex] = sOptions;
+              }
               serialSend(command, 1);
         
   } else if (command == "setupSignalDAC"){
@@ -598,7 +616,8 @@ void executeSerialCommand(String command, String commandString){
               if ((signalMode[sIndex]!=SIGNALMODE::DAC) && 
                   (signalMode[sIndex]!=SIGNALMODE::MAGDAC) && 
                   (signalMode[sIndex]!=SIGNALMODE::MAGHALL_WRITE) &&
-                  (signalMode[sIndex]!=SIGNALMODE::MAGCURR_WRITE)){ // If we arent in DAC mode then we have a problem.
+                  (signalMode[sIndex]!=SIGNALMODE::MAGCURR_WRITE) &&
+                  (signalMode[sIndex]!=SIGNALMODE::DO)){ // If we arent in DAC mode then we have a problem.
                 raiseError("Signal mode is not DAC");
                 return;
               }
