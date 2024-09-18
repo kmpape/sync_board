@@ -227,6 +227,7 @@ void switchLED(int channel, bool on = false, bool force = false){
 }
 
 void switchLEDDirect(int channel, bool on = false, bool force = false){
+    Serial.println("Called switchLEDDirect with args channel=" + String(channel) + " on=" + String(on) + " force" + String(force));
     // Basicaly a wrapper for switchLEd if we just want to turn on a LEd permanently. 
     if (on && !force){ //If the level hasnt been set we dont allow the user to turn it on.
         if (LEDLevelSet[channel-1]>=0.3){
@@ -240,11 +241,16 @@ void switchLEDDirect(int channel, bool on = false, bool force = false){
     if (on == false){
         resetLEDTimeout(channel);
     }
-}
+}gi
 
 void resetLEDTimeout(int channel) {
-    LEDTimeout[channel-1] = 0; //Reset the timeout
-    NumberLEDsBeingTimed = NumberLEDsBeingTimed -1; //Decrement the number of LEDs being timed.
+    Serial.println("Resetting LED timeout for channel " + String(channel));
+    if (LEDTimeout[channel-1] > 0) {
+        LEDTimeout[channel-1] = 0; //Reset the timeout
+        NumberLEDsBeingTimed = NumberLEDsBeingTimed -1; //Decrement the number of LEDs being timed.
+    } else {
+        Serial.println("LED is not timed. Cannot reset timeout.");
+    }
 }
 
 void switchLEDTimed(int channel, float time = 0.0, bool on = false){
@@ -332,6 +338,7 @@ void LEDTimingHandler(){
         if (LEDTimeout[i] > 0){ // This should be non-zero if the LED is on and being timed.
             if (micros() - LEDTriggerTime[i] > LEDTimeout[i]){
                 switchLED(i+1, false); //Turn LED off
+                Serial.println("Turning LED " + String(i+1) + " off after " + String(micros() - LEDTriggerTime[i]) + " microseconds.");
                 resetLEDTimeout(i+1);
 //                LEDTimeout[i] = 0; //Reset the timeout
 //                NumberLEDsBeingTimed = NumberLEDsBeingTimed -1; //Decrement the number of LEDs being timed.
