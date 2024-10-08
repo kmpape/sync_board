@@ -6,6 +6,7 @@
 const int numLEDs = 8; //Number of LEDs on the LED board.
 
 // Function prototypes
+void resetLEDTimeout(int channel);
 void resetLEDs(bool hardwareActive = true);
 float readLEDOutput(int channel, bool current = true);
 void setLEDVoltageOutput(int channel, bool current = true);
