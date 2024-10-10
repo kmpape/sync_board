@@ -241,7 +241,7 @@ void switchLEDDirect(int channel, bool on = false, bool force = false){
     if (on == false){
         resetLEDTimeout(channel);
     }
-}gi
+}
 
 void resetLEDTimeout(int channel) {
     Serial.println("Resetting LED timeout for channel " + String(channel));
