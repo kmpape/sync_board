@@ -140,7 +140,7 @@ class SyncBoardController:
                 LOGGER.warning(f"Setting LED for {duration} miliseconds.")
             self.send_command(Command.format(Command.SWITCH_LED_TIMED, led_id, duration))
             self._led_configs[led_id]['status'] = "timed"
-            self._led_configs[led_id]['stop_time'] = time.time() + duration * 1000.0
+            self._led_configs[led_id]['stop_time'] = time.time() + duration / 1000.0
 
     def enable_magnet(self, enable: bool = True):
         self.send_command(Command.format(Command.ENABLE_MAGNET, enable))
