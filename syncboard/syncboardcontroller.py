@@ -155,15 +155,18 @@ class SyncBoardController:
         # if led_id not in self.LED_ID:
         #     raise ValueError(f"LED ID {led_id} not available. Must be in {self.LED_ID}.")
         if intensity > 0.29 or intensity < 0:
-            LOGGER.warning(f"Received intensity {intensity} for enable_led.")
+            LOGGER.warning(f"Received intensity {intensity} for enable_led. Duration is {duration}.")
         self.setup_led(led_id=led_id, intensity=intensity)
-        if duration is None:
-            self.send_command(Command.format(Command.SWITCH_LED, led_id.value, 1))
+        if (duration is None) and (intensity <= 0.29):
+            self.send_command(Command.format(Command.SWITCH_LED, led_id, 1))
             self._led_configs[led_id]['status'] = "on"
         else:
-            self.send_command(Command.format(Command.SWITCH_LED_TIMED, led_id.value, duration))
+            if duration is None:
+                duration = 3000
+                LOGGER.warning(f"Setting LED for {duration} miliseconds.")
+            self.send_command(Command.format(Command.SWITCH_LED_TIMED, led_id, duration))
             self._led_configs[led_id]['status'] = "timed"
-            self._led_configs[led_id]['stop_time'] = time.time() + duration * 1000.0
+            self._led_configs[led_id]['stop_time'] = time.time() + duration / 1000.0
 
     def enable_magnet(self, enable: bool = True):
         self.send_command(Command.format(Command.ENABLE_MAGNET, enable))

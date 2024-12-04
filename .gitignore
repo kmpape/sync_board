@@ -39,8 +39,5 @@
 *.app
 
 # Python
-*.pyc
 __pycache__/*
-
-# VSCode
-.vscode/*
+syncboard/__pycache__/*
