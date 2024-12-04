@@ -37,3 +37,7 @@
 *.exe
 *.out
 *.app
+
+# Python
+__pycache__/*
+syncboard/__pycache__/*
