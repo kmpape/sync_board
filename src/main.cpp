@@ -110,7 +110,7 @@ int signalTimeout[numSignals] = {0}; // How long to next action in microseconds.
 int signalTriggerTime[numSignals] = {0}; // When we last flipped the signal in microseconds.
 int signalPosition[numSignals] = {-1}; // The current position in the buffer. This is incremented each time we add a new value. Starts at -1 so we can begin with new value at 0
 
-const int signalMaxLength = 500; // How long each buffer is. You are making even the shorter ones this long but yolo.
+const int signalMaxLength = 2000; // How long each buffer is. You are making even the shorter ones this long but yolo.
 float signalData[numSignals][signalMaxLength]; // The data buffers. Note this could be used to store values (ADC mode) or record values (DAC mode).
 int signalTiming[numSignals][signalMaxLength] = {-1}; // The timing buffers in microseconds if needed - says when actions should be done. -1 means you stop there.
 
