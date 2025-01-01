@@ -583,7 +583,8 @@ void signalHandler(int signalIndex){
   } else if (signalMode[signalIndex] == SIGNALMODE::DO){
     digitalWriteFast(signalOptions[signalIndex], signalData[signalIndex][index]);
   } else if (signalMode[signalIndex] == SIGNALMODE::LED) {
-    switchLEDDirect(signalOptions[signalIndex], signalData[signalIndex][index] > 0.0);
+    // switchLEDDirect(signalOptions[signalIndex], signalData[signalIndex][index] > 0.0);
+    switchLED(signalOptions[signalIndex], signalData[signalIndex][index] > 0.0);
   } else if (signalMode[signalIndex] == SIGNALMODE::LED_TIMED) {
     if (signalData[signalIndex][index] > 0)
       switchLEDTimed(signalOptions[signalIndex], signalData[signalIndex][index], true);

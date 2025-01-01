@@ -16,6 +16,7 @@ void setLEDLevel(int channel, float power = 0.0, bool current = true);
 void calibrateLED(int channel,float maxCurrent = 5.0);
 void turnLEDsOff();
 void switchLEDDirect(int channel, bool on = false, bool force = false);
+void switchLED(int channel, bool on = false, bool force = false);
 void switchLEDTimed(int channel, float time = 0.0, bool on = false);
 void LEDTimingHandler();
 void measureLED(int channel, float* result);
