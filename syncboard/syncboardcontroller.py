@@ -23,6 +23,7 @@ LOGGER.propagate = False
 # regex search string that can handle scientific notation, e.g. 1.2 -> 1.2, 1.2e-1 -> 0.12, 1.2e2 -> 120
 float_rgx = re.compile(r'[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?')
 
+
 class SignalMode(Enum):
     ADC = 0
     DAC = 1
@@ -39,12 +40,22 @@ class SignalMode(Enum):
     DO_TIMED = 12
     GPIO_WRITE = 13
 
+
 class LED_ID(int, Enum):
+    # LEDType.LED_385_NM: 7,
+    # LEDType.LED_450_NM: 1,
+    # LEDType.LED_515_NM: 2,
+    # LEDType.LED_565_NM: 3,
+    # LEDType.LED_645_NM: 4,
+    # LEDType.NO_LED: None,
     # LED_385_NM = 5 not sure which one this is
     LED_450_NM = 1
     LED_515_NM = 2
     LED_565_NM = 3
     LED_645_NM = 4
+    LED_385_NM = 7
+    NO_LED = -1
+
 
 class SyncBoardController:
     # LED_ID = [1, 2, 3, 4, 7]
@@ -107,11 +118,11 @@ class SyncBoardController:
 
     def calibrate_magnet(self):
         response = self.send_command(Command.format(Command.CALIBRATE_MAGNET), wait_time=5)
-        print(response)
+        # print(response)
 
     def calibrate_hall(self, hall_id: int):
         response = self.send_command(Command.format(Command.CALIBRATE_HALL, hall_id), wait_time=2)
-        print(response)
+        # print(response)
 
     def disable_system(self):
         self.send_command(Command.format(Command.SYSTEM_DISABLE))
@@ -158,13 +169,13 @@ class SyncBoardController:
             LOGGER.warning(f"Received intensity {intensity} for enable_led. Duration is {duration}.")
         self.setup_led(led_id=led_id, intensity=intensity)
         if (duration is None) and (intensity <= 0.29):
-            self.send_command(Command.format(Command.SWITCH_LED, led_id, 1))
+            self.send_command(Command.format(Command.SWITCH_LED, led_id.value, 1))
             self._led_configs[led_id]['status'] = "on"
         else:
             if duration is None:
                 duration = 3000
                 LOGGER.warning(f"Setting LED for {duration} miliseconds.")
-            self.send_command(Command.format(Command.SWITCH_LED_TIMED, led_id, duration))
+            self.send_command(Command.format(Command.SWITCH_LED_TIMED, led_id.value, duration))
             self._led_configs[led_id]['status'] = "timed"
             self._led_configs[led_id]['stop_time'] = time.time() + duration / 1000.0
 
@@ -204,7 +215,7 @@ class SyncBoardController:
 
     def read_hall(self, hall_id: int) -> float:
         response = self.send_command(Command.format(Command.READ_HALL, hall_id), wait_time=0.1)
-        print(response)
+        # print(response)
         return float(float_rgx.search(response).group())
 
     def read_photodiode(self, channel: int = 8) -> float | None:
@@ -255,7 +266,7 @@ class SyncBoardController:
         -------
 
         """
-        if led_id is None:
+        if led_id == LED_ID.NO_LED:
             LOGGER.debug(f"Nothing to setup for led_id {led_id}.")
             return
         # if led_id not in self.LED_ID:
@@ -263,7 +274,6 @@ class SyncBoardController:
         if self._is_equal_led_config(led_id=led_id, feedback_mode=feedback_mode, intensity=intensity):
             LOGGER.debug(f"LED {led_id} already configured: {self._led_configs[led_id]}")
             return
-        print("Setup LED ", led_id)
         self.send_command(Command.format(Command.SETUP_LED, led_id.value, feedback_mode, intensity))
         self._led_configs[led_id]['mode'] = feedback_mode
         self._led_configs[led_id]['intensity'] = intensity
