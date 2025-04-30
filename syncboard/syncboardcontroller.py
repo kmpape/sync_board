@@ -49,7 +49,7 @@ class LED_ID(int, Enum):
     # LEDType.LED_645_NM: 4,
     # LEDType.NO_LED: None,
     # LED_385_NM = 5 not sure which one this is
-    LED_450_NM = 1
+    LED_450_NM = 5
     LED_515_NM = 2
     LED_565_NM = 3
     LED_645_NM = 4
