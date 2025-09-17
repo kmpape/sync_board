@@ -1,4 +1,6 @@
+from datetime import datetime
 import logging
+from logging.handlers import RotatingFileHandler
 from contextlib import contextmanager
 import serial
 import time
@@ -15,8 +17,11 @@ handler = logging.StreamHandler()
 handler.setFormatter(FORMATTER)
 LOGGER.addHandler(handler)
 LOGGER.propagate = False
-
-
+filename = "syncboard_serial_{}.log".format(datetime.now().strftime("%Y-%m-%d_%H:%M:%S.%f"))
+file_handler = RotatingFileHandler(f"/home/hslab/workspace_python/conda_evomachine3.9/sync_board/Logs/{filename}", maxBytes=1000000, backupCount=20)
+file_handler.setFormatter(FORMATTER)
+file_handler.setLevel(logging.INFO)
+LOGGER.addHandler(file_handler)
 class SerialConnection:
     NUM_SIG_FIG_FLOAT = 7
     DEBUG_MODE = False
@@ -44,6 +49,7 @@ class SerialConnection:
         serial_connection = cls(*args, **kwargs)
         yield serial_connection
         serial_connection.disconnect()
+        LOGGER.warning("SyncBoardController.SerialConnection: Disconnected from syncboard.")
 
     def reset_buffers(self):
         try:
@@ -63,9 +69,18 @@ class SerialConnection:
         encoded_command = command.encode()
         self.send(encoded_command)
         if self.DEBUG_MODE:
-            responses = self.read_responses(wait_time=0)
+            responses = self.read_responses(wait_time=10)
         else:
-            return None
+            responses = self.read_responses(wait_time=0.05)
+
+        if not responses:
+            msg = f"SyncBoardController.SerialConnection: syncboard did not respond on command {command}."
+            LOGGER.error(msg)
+        else:
+            msg = f"SyncBoardController.SerialConnection: syncboard responded with {responses} to {command}."
+            LOGGER.info(msg)
+
+        return responses
 
     def read_response(self, wait_time: float = 0) -> str:
         """
@@ -98,9 +113,9 @@ class SerialConnection:
         start_time = time.perf_counter()
         while time.perf_counter() - start_time < wait_time:
             if self.connection.in_waiting > 0:
-                data.append(self.read_response())
-        response = self.connection.readline().decode()
-        LOGGER.debug(f"Received: {response}")
+                data.append(self.read_response(wait_time=wait_time))
+        # response = self.connection.readline().decode()
+        LOGGER.debug(f"Received: {data}")
 
         return data
 
