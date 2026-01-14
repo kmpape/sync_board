@@ -22,6 +22,8 @@ file_handler = RotatingFileHandler(f"/home/hslab/workspace_python/conda_evomachi
 file_handler.setFormatter(FORMATTER)
 file_handler.setLevel(logging.INFO)
 LOGGER.addHandler(file_handler)
+
+
 class SerialConnection:
     NUM_SIG_FIG_FLOAT = 7
     DEBUG_MODE = False
@@ -30,16 +32,23 @@ class SerialConnection:
         self,
         port: str,
         baud_rate: int,
-        num_data_bits=serial.EIGHTBITS,
-        num_stop_bits=serial.STOPBITS_ONE,
+        num_data_bits: int = serial.EIGHTBITS,
+        num_stop_bits: int = serial.STOPBITS_ONE,
         read_timeout_s: float = 1,
     ):
         LOGGER.debug(f"Connecting to {port} at {baud_rate} baud")
+
+        self.port: str = port
+        self.baud_rate: int = baud_rate
+        self.num_data_bits: int = num_data_bits
+        self.num_stop_bits: int = num_stop_bits
+        self.read_timeout_s: float = read_timeout_s
+
         self.connection = serial.Serial(
             port=port,
             baudrate=baud_rate,
-            bytesize=serial.EIGHTBITS,
-            stopbits=serial.STOPBITS_ONE,
+            bytesize=num_data_bits,
+            stopbits=num_stop_bits,
             timeout=read_timeout_s,
         )
 

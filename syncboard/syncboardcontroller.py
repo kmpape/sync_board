@@ -1,6 +1,8 @@
 from enum import Enum
 import logging
 import re
+import serial.tools.list_ports
+from termios import error as TermiosError
 import time
 import threading
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -61,18 +63,28 @@ class SyncBoardController:
     # LED_ID = [1, 2, 3, 4, 7]
     LED_MAX_CURRENT = {1: 10.0, 2: 8.0, 3: 12.0, 4: 8.0, 7: 6.0}
     DEFAULT_POLL_INTERVAL_S = 0.01
+    MAX_RECONNECT_ATTEMPTS = 100
+    MAX_RESEND_ATTEMPTS = 10
 
     def __init__(
         self,
         serial_connection: SerialConnection,
+        port: str,
+        baud_rate: int,
         poll_interval_s: float = DEFAULT_POLL_INTERVAL_S,
     ):
-        self.connection = serial_connection
+        self.connection = serial_connection  # You should never directly use this
+        self.port: str = port
+        self.baud_rate: int = baud_rate
         self.poll_interval_s = poll_interval_s
         self._lock = threading.RLock()
 
         self._is_initialised: bool = False
         "Set to true after initialise(). Set to false after finalise()."
+        self._num_reconnect_attempts: int = 0
+        "Counter only reset here. Will raise RunTimeError when MAX_RECONNECT_ATTEMPTS is reached."
+        self._num_resend_attempts: int = 0
+        "Counter resets every time send_command is called."
 
         # LED configurations
         self._led_configs: Dict[LED_ID, Dict[str, Union[int, float, None, str]]] = {
@@ -81,9 +93,25 @@ class SyncBoardController:
 
     @classmethod
     def from_serial_port(
-        cls, port: str = '/dev/ttyACM1', baud_rate: int = 2000000, *tiger_args, **tiger_kwargs
+        cls, port: str | None = '/dev/ttyACM1', baud_rate: int = 2000000, *syncboard_args, **syncboard_kwargs
     ) -> "SyncBoardController":
-        return cls(SerialConnection(port, baud_rate), *tiger_args, **tiger_kwargs)
+        if port is None:
+            port = cls.get_syncboard_port()
+        return cls(SerialConnection(port, baud_rate), port, baud_rate, *syncboard_args, **syncboard_kwargs)
+
+    @staticmethod
+    def get_syncboard_port(hwid: str = "16C0:0483") -> str:
+        def get_pid(in_str):
+            match = re.search(r'VID:PID=(\w+:\w+)', in_str)
+            if match:
+                return match.group(1)
+            else:
+                return None
+        ports = list(serial.tools.list_ports.comports())
+        for port in ports:
+            if get_pid(port.hwid) == hwid:
+                return port.device
+        raise RuntimeError("Syncboard not found")
 
     def attach_leds(self):
         self.send_command(Command.format(Command.ATTACH_LED, True))
@@ -226,14 +254,54 @@ class SyncBoardController:
             LOGGER.warning(f"Received malformatted response from read_photodiode: {response_str}, {e}")
             return None
 
+    def reconnect(self):
+        self._num_reconnect_attempts += 1
+        if self._num_reconnect_attempts > self.MAX_RECONNECT_ATTEMPTS:
+            msg = f"SyncBoardController.reconnect: max reconnect attempts " \
+                  f"({self._num_reconnect_attempts}) reached."
+            LOGGER.error(msg)
+            raise RuntimeError(msg)
+        # Try closing the previous connection
+        try:
+            self.connection.disconnect()
+        except Exception:
+            try:
+                self.connection.connection.close()
+            except Exception:
+                pass
+        time.sleep(1)
+        # Try reconnecting on different port
+        old_port = self.port
+        self.port = self.get_syncboard_port()
+        msg = f"SyncBoardController.reconnect: reconnecting at attempt {self._num_reconnect_attempts} " \
+              f"on new port {self.port} after error on old port {old_port}."
+        LOGGER.warning(msg)
+        try:
+            self.connection = SerialConnection(self.port, self.baud_rate)
+        except Exception as E:
+            msg = f"SyncBoardController.reconnect: error during reconnection: {E}."
+            LOGGER.error(msg)
+            raise RuntimeError(msg)
+        msg = f"SyncBoardController.reconnect: successfully reconnected on port {self.port}."
+        LOGGER.warning(msg)
+
     def send_command(self, command: str, wait_time: float = 0) -> str:
-        LOGGER.debug(f"Sending command {command}.")
-        with self._lock:
-            self.connection.send_command(command)
-            # TODO SyncBoard does not seem to respond that fast
-            response = self.connection.read_response(wait_time=wait_time)
-        if 'error' in response:
-            LOGGER.error(response.rstrip('#%').lstrip('$error/'))
+        self._num_resend_attempts = 0
+        LOGGER.debug(f"Sending command {command} at attempt {self._num_resend_attempts}.")
+        while self._num_resend_attempts < self.MAX_RESEND_ATTEMPTS:
+            with self._lock:
+                try:
+                    self.connection.send_command(command)  # TODO we may send a command twice here
+                    response = self.connection.read_response(wait_time=wait_time)
+                    if 'error' in response:  # these are syncboard errors
+                        LOGGER.error(response.rstrip('#%').lstrip('$error/'))
+                    break  # exit while loop
+                except (TermiosError, serial.serialutil.SerialException, serial.SerialException, OSError) as e:
+                    msg = f"SyncBoardController.send_command: received error: {e}"
+                    LOGGER.error(msg)
+                    time.sleep(1)
+                    self.reconnect()
+            self._num_resend_attempts += 1
         return response
 
     def set_dac(self, channel: int, voltage: float):
