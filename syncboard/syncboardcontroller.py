@@ -226,9 +226,9 @@ class SyncBoardController:
                 LOGGER.warning("Sync board already initialised. Returning.")
                 return
         self.attach_leds()
-        self.attach_magnet()
+        # self.attach_magnet()
         self.enable_system()
-        self.setup_magnet()
+        # self.setup_magnet()
         self._setup_leds()
         self._is_initialised = True
 

@@ -85,6 +85,7 @@ class SerialConnection:
         if not responses:
             msg = f"SyncBoardController.SerialConnection: syncboard did not respond on command {command}."
             LOGGER.error(msg)
+            raise serial.serialutil.SerialException(msg)
         else:
             msg = f"SyncBoardController.SerialConnection: syncboard responded with {responses} to {command}."
             LOGGER.info(msg)
