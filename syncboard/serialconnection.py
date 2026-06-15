@@ -20,7 +20,7 @@ LOGGER.addHandler(handler)
 LOGGER.propagate = False
 filename = "syncboard_serial_{}.log".format(datetime.now().strftime("%Y-%m-%d_%H:%M:%S.%f"))
 # Log to a repository-relative folder so the package is importable on any
-# machine. Previously hardcoded to /home/hslab/.../sync_board/Logs.
+# machine.
 SYNC_BOARD_DIR = Path(__file__).resolve().parents[1]
 LOG_DIR = SYNC_BOARD_DIR / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
