@@ -2,6 +2,7 @@ from datetime import datetime
 import logging
 from logging.handlers import RotatingFileHandler
 from contextlib import contextmanager
+from pathlib import Path
 import serial
 import time
 from typing import List, Union
@@ -18,7 +19,12 @@ handler.setFormatter(FORMATTER)
 LOGGER.addHandler(handler)
 LOGGER.propagate = False
 filename = "syncboard_serial_{}.log".format(datetime.now().strftime("%Y-%m-%d_%H:%M:%S.%f"))
-file_handler = RotatingFileHandler(f"/home/hslab/workspace_python/conda_evomachine3.9/sync_board/Logs/{filename}", maxBytes=1000000, backupCount=20)
+# Log to a repository-relative folder so the package is importable on any
+# machine. Previously hardcoded to /home/hslab/.../sync_board/Logs.
+SYNC_BOARD_DIR = Path(__file__).resolve().parents[1]
+LOG_DIR = SYNC_BOARD_DIR / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+file_handler = RotatingFileHandler(LOG_DIR / filename, maxBytes=1000000, backupCount=20)
 file_handler.setFormatter(FORMATTER)
 file_handler.setLevel(logging.INFO)
 LOGGER.addHandler(file_handler)
