@@ -11,16 +11,7 @@ from syncboard.serialconnection import SerialConnection
 from syncboard.command import Command
 
 
-LOGGING_LEVEL = logging.INFO
-FORMATTER = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 LOGGER = logging.getLogger(__name__)
-for handler in LOGGER.handlers:
-    LOGGER.removeHandler(handler)
-LOGGER.setLevel(LOGGING_LEVEL)
-handler = logging.StreamHandler()
-handler.setFormatter(FORMATTER)
-LOGGER.addHandler(handler)
-LOGGER.propagate = False
 
 # regex search string that can handle scientific notation, e.g. 1.2 -> 1.2, 1.2e-1 -> 0.12, 1.2e2 -> 120
 float_rgx = re.compile(r'[-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?')

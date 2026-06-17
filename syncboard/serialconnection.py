@@ -1,33 +1,11 @@
-from datetime import datetime
 import logging
-from logging.handlers import RotatingFileHandler
 from contextlib import contextmanager
-from pathlib import Path
 import serial
 import time
 from typing import List, Union
 from termios import error as TermiosError
 
-LOGGING_LEVEL = logging.INFO
-FORMATTER = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 LOGGER = logging.getLogger(__name__)
-for handler in LOGGER.handlers:
-    LOGGER.removeHandler(handler)
-LOGGER.setLevel(LOGGING_LEVEL)
-handler = logging.StreamHandler()
-handler.setFormatter(FORMATTER)
-LOGGER.addHandler(handler)
-LOGGER.propagate = False
-filename = "syncboard_serial_{}.log".format(datetime.now().strftime("%Y-%m-%d_%H:%M:%S.%f"))
-# Log to a repository-relative folder so the package is importable on any
-# machine.
-SYNC_BOARD_DIR = Path(__file__).resolve().parents[1]
-LOG_DIR = SYNC_BOARD_DIR / "logs"
-LOG_DIR.mkdir(parents=True, exist_ok=True)
-file_handler = RotatingFileHandler(LOG_DIR / filename, maxBytes=1000000, backupCount=20)
-file_handler.setFormatter(FORMATTER)
-file_handler.setLevel(logging.INFO)
-LOGGER.addHandler(file_handler)
 
 
 class SerialConnection:
