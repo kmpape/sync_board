@@ -149,14 +149,16 @@ class SyncBoardController:
     def disable_led(
             self,
             led_id: Optional[LED_ID] = None,
+            fast=False,
     ):
         # if (led_id is not None) and (led_id not in self.LED_ID):
         #     LOGGER.warning(f"LED ID {led_id} unknown. Disabling all LEDs.")
         #     led_id = None
+        send_command = self.fast_send_command if fast else self.send_command
         if led_id is None:
             self.disable_all_leds()
         else:
-            self.send_command(Command.format(Command.SWITCH_LED, led_id.value, 0))
+            send_command(Command.format(Command.SWITCH_LED, led_id.value, 0))
             self._led_configs[led_id]['status'] = "off"
 
     def disable_all_leds(self):
@@ -169,6 +171,7 @@ class SyncBoardController:
             led_id: LED_ID,
             intensity: float = 0.1,
             duration: Optional[float] = None,
+            fast=False,
     ):
         """
 
@@ -182,19 +185,22 @@ class SyncBoardController:
         -------
 
         """
+        send_command = self.fast_send_command if fast else self.send_command
         # if led_id not in self.LED_ID:
         #     raise ValueError(f"LED ID {led_id} not available. Must be in {self.LED_ID}.")
         if intensity > 0.29 or intensity < 0:
             LOGGER.warning(f"Received intensity {intensity} for enable_led. Duration is {duration}.")
         self.setup_led(led_id=led_id, intensity=intensity)
         if (duration is None) and (intensity <= 0.29):
-            self.send_command(Command.format(Command.SWITCH_LED, led_id.value, 1))
+            send_command(Command.format(Command.SWITCH_LED, led_id.value, 1))
             self._led_configs[led_id]['status'] = "on"
         else:
             if duration is None:
                 duration = 3000
                 LOGGER.warning(f"Setting LED for {duration} miliseconds.")
-            self.send_command(Command.format(Command.SWITCH_LED_TIMED, led_id.value, duration))
+            
+            send_command(Command.format(Command.SWITCH_LED_TIMED, led_id.value, duration))
+            
             self._led_configs[led_id]['status'] = "timed"
             self._led_configs[led_id]['stop_time'] = time.time() + duration / 1000.0
 
@@ -217,9 +223,9 @@ class SyncBoardController:
                 LOGGER.warning("Sync board already initialised. Returning.")
                 return
         self.attach_leds()
-        # self.attach_magnet()
+        self.attach_magnet()
         self.enable_system()
-        # self.setup_magnet()
+        self.setup_magnet()
         self._setup_leds()
         self._is_initialised = True
 
@@ -276,9 +282,20 @@ class SyncBoardController:
         msg = f"SyncBoardController.reconnect: successfully reconnected on port {self.port}."
         LOGGER.warning(msg)
 
+    def fast_send_command(self, command: str) -> None:
+        with self._lock:
+            try:
+                self.connection.send_command(command)
+            except (TermiosError, serial.serialutil.SerialException, serial.SerialException, OSError) as e:
+                msg = f"SyncBoardController.fast_send_command: received error: {e}"
+                LOGGER.error(msg)
+                time.sleep(1)
+                self.reconnect()
+
     def send_command(self, command: str, wait_time: float = 0) -> str:
         self._num_resend_attempts = 0
         LOGGER.debug(f"Sending command {command} at attempt {self._num_resend_attempts}.")
+        response = ""
         while self._num_resend_attempts < self.MAX_RESEND_ATTEMPTS:
             with self._lock:
                 try:

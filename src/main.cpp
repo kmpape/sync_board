@@ -1189,6 +1189,7 @@ void executeSerialCommand(String command, String commandString){
           serialSend(command, 1);
 
   } else if (command == "setupLED")  {
+          serialSend("Received setup LED command", 1);
           // Command to set up a LED mode ahead of it being used to do anything in particular. THis sets the feedback mode (current or optical) as well as the power level. Note it should already be calibrated!
           // Argument 0 is the LED number from 1 to 8
           // Argument 1 is the feedback mode 0 for current 1 for optical power.
@@ -1355,6 +1356,7 @@ void executeSerialCommand(String command, String commandString){
   } 
   else if (command == "setupMagnetBoard") {
     setupMagnetBoard();
+    serialSend("Setup magnet board complete", 1);
   } else if (command == "singleReadMagnetADC") {
     int channel = argGetInt(commandString,0); // Get the first argument from the serial input
     uint8_t value = singleReadMagnetADC(channel);
@@ -1364,14 +1366,18 @@ void executeSerialCommand(String command, String commandString){
     float value = argGetFloat(commandString,1);
     setMagDACI2C(channel, value);
   } else if (command == "calibrateMagnet") {
+    serialSend("Calibrating magnet...", 1);
     calibrateMagnet();
+    serialSend("Calibrated magnet", 1);
   } else if (command == "enableMagnet") {
     bool enable = argGetBool(commandString,0); // Get the first argument from the serial input
     enableMagnet(enable);
+    serialSend("Enabled magnet ", enable);
   } else if (command == "setMagnet") {
     int NC = argGetInt(commandString, 0); 
     float value = argGetFloat(commandString, 1); 
     setMagnetCurrent(NC, value);
+    serialSend("Set magnet current", value);
   } else if (command == "readHall") {
     int id = argGetInt(commandString, 0);
     float value = singleReadHall(id);
@@ -1379,10 +1385,12 @@ void executeSerialCommand(String command, String commandString){
   } else if (command == "calibrateHall") {
     int id = argGetInt(commandString, 0);
     calibrateHall(id);
+    serialSend("Calibrated Hall sensor " + String(id), 1);
   } else if (command == "setMagnetField") {
     int NC = argGetInt(commandString, 0);
     float value = argGetFloat(commandString, 1);
     setMagnetField(NC, value);
+    serialSend("Set magnetic field", value);
   } else {
     raiseError("Command "+command+" not recognised");
   }
