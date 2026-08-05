@@ -108,11 +108,14 @@ bool signalIsSlave[numSignals] = {false}; // If this signal is a slave to anothe
 
 int signalTimeout[numSignals] = {0}; // How long to next action in microseconds. Note leave this at 0 if it is not being used.
 int signalTriggerTime[numSignals] = {0}; // When we last flipped the signal in microseconds.
-int signalPosition[numSignals] = {-1}; // The current position in the buffer. This is incremented each time we add a new value. Starts at -1 so we can begin with new value at 0
+// The current position in the buffer. This is incremented each time we add a new value. Starts at -1 so we can begin with new value at 0
+// DO NOT initialise this as {-1}! In C that only sets element 0 to -1 and zero-fills the rest, which leaves
+// signals 1..N starting one step ahead of signal 0. Everything here is filled properly in initSignalBuffers().
+int signalPosition[numSignals];
 
 const int signalMaxLength = 2000; // How long each buffer is. You are making even the shorter ones this long but yolo.
 float signalData[numSignals][signalMaxLength]; // The data buffers. Note this could be used to store values (ADC mode) or record values (DAC mode).
-int signalTiming[numSignals][signalMaxLength] = {-1}; // The timing buffers in microseconds if needed - says when actions should be done. -1 means you stop there.
+int signalTiming[numSignals][signalMaxLength]; // The timing buffers in microseconds if needed - says when actions should be done. -1 means you stop there. Same initialisation trap as above, so also done in initSignalBuffers().
 
 
 ///// LED parameters - mostly defined in LEDDriver.cpp.
@@ -164,6 +167,22 @@ void switchDOTimed(int DO, int time) {
 }
 
 
+void initSignalBuffers(){
+  // Puts every signal into the "never run yet" state. Called once from setup() so that the very first
+  // sequence after a power cycle / reset / reflash starts from index 0 on ALL signals, not just signal 0.
+  for (int i=0; i<numSignals; i++){
+    signalActive[i] = false;
+    signalPosition[i] = -1;
+    signalTriggerTime[i] = 0;
+    signalTimeout[i] = 0;
+    for (int j=0; j<signalMaxLength; j++){
+      signalData[i][j] = 0.0;
+      signalTiming[i][j] = -1; // -1 means "stop here", so an un-setup signal can never free-run at 0us.
+    }
+  }
+}
+
+
 void factoryReset(){
   // Hard reset of memory (and maybe other things). Don't run unless you mean it!
   clearMemory(); // Set all EEPROM byte+float values to 0
@@ -211,7 +230,13 @@ void enableSystem(bool enable = false){
       NumberLEDsBeingTimed = 0; // Reset this flag since we are turning off the system.
     }
     for (int i=0; i<numSignals; i++){// Disable our active signals.
+        // Wind them back to the start too. Without this an aborted run (e.g. the PC script crashes or is
+        // Ctrl-C'd before it sends stopSignal) leaves the positions mid-sequence, and the next run then
+        // starts its slaves part way through their buffers - the output pattern comes out rotated.
         signalActive[i] = false;
+        signalPosition[i] = -1;
+        signalTriggerTime[i] = 0;
+        signalTimeout[i] = 0;
     }
     //Disable our active images. Note we do this here but NOT in reset() since we have immediately above disabled any LEDs and peripherals so this couldn't accidentally leave a LED on. 
     imageHardReset(); // Reset the imaging system. This is the hard-reset function that can be called here and also in the timeout case. Otherwise it should never be needed as propery execute image sequences do all this stuff automatically.
@@ -513,6 +538,12 @@ void signalResetAndStart(int signalIndex){
     if (signalMode[signalIndex] == SIGNALMODE::CONDUCTOR){
       for (int i=0; i<numSignals; i++){
         if ((signalOptions[signalIndex] & (1 << i)) && signalIsSlave[i]) { // If the bit is set then we need to activate the signal.
+          // Wind the slave back to the start as well - this MUST mirror signalStopAndBackToStart. If you only
+          // set signalActive here then a slave resumes from wherever it was left, so it runs at a different
+          // buffer index to its siblings and everything it drives comes out shifted relative to them.
+          signalPosition[i] = -1;
+          signalTriggerTime[i] = 0;
+          signalTimeout[i] = 0;
           signalActive[i] = true;
         }
       }
@@ -1402,6 +1433,7 @@ void setup() {
   
   //EEPROM.write(0,0); // write a value to the EEPROM
   // fwrite(0,0.0); // write a value to the EEPROM as a float
+  initSignalBuffers(); // Put all the timed signals into a known "not started" state before anything can run them.
   serialSend("status", "setup complete"); // Send a status message over serial
   enableSystem(false); // Disable the system. This is the default state at startup.
 
