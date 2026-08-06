@@ -66,6 +66,7 @@ class SyncBoardController:
     LED_MAX_CURRENT = {1: 10.0, 2: 8.0, 3: 12.0, 4: 8.0, 7: 6.0}
     DEFAULT_POLL_INTERVAL_S = 0.01
     DEFAULT_RESPONSE_TIMEOUT_S = 1.0
+    SYSTEM_STATE_TIMEOUT_S = 2.0
     LED_CALIBRATION_TIMEOUT_S = 60.0
     MAX_RECONNECT_ATTEMPTS = 100
 
@@ -177,7 +178,11 @@ class SyncBoardController:
         # print(response)
 
     def disable_system(self):
-        self.send_without_response(Command.format(Command.SYSTEM_DISABLE))
+        self.send_and_wait_for_text(
+            Command.format(Command.SYSTEM_DISABLE),
+            "System disabled",
+            response_timeout_s=self.SYSTEM_STATE_TIMEOUT_S,
+        )
 
     def disable_led(
             self,
@@ -244,7 +249,11 @@ class SyncBoardController:
         )
 
     def enable_system(self):
-        self.send_without_response(Command.format(Command.SYSTEM_ENABLE))
+        self.send_and_wait_for_text(
+            Command.format(Command.SYSTEM_ENABLE),
+            "System enabled",
+            response_timeout_s=self.SYSTEM_STATE_TIMEOUT_S,
+        )
 
     def factory_reset(self):
         self.send_without_response(Command.format(Command.FACTORY_RESET))
@@ -341,6 +350,24 @@ class SyncBoardController:
                 self._recover_transport("send_without_response", exc)
                 raise
 
+    def send_and_wait_for_text(
+        self,
+        command: str,
+        expected_text: str,
+        response_timeout_s: float,
+    ) -> str:
+        """Use a legacy textual completion message as a command barrier."""
+        with self._lock:
+            try:
+                return self.connection.send_and_wait_for_text(
+                    command,
+                    expected_text=expected_text,
+                    response_timeout_s=response_timeout_s,
+                )
+            except (TermiosError, SerialProtocolError, serial.serialutil.SerialException, serial.SerialException, OSError) as exc:
+                self._recover_transport("send_and_wait_for_text", exc)
+                raise
+
     def send_command(
         self,
         command: str,
@@ -402,7 +429,9 @@ class SyncBoardController:
         )
 
     def setup_gpio(self, gpio_num: int, enable: int, mode: int, output_state: int):
-        self.send_command(Command.format(Command.SETUP_GPIO, gpio_num, enable, mode, output_state))
+        # The current firmware prints a diagnostic but does not send a framed
+        # response for setupGPIO, so this must remain a one-way command.
+        self.send_without_response(Command.format(Command.SETUP_GPIO, gpio_num, enable, mode, output_state))
 
     def setup_led(
             self,
@@ -446,10 +475,10 @@ class SyncBoardController:
         return
 
     def write_do(self, channel: int, state: int):
-        self.send_command(Command.format(Command.WRITE_DO, channel, state))
+        return self.send_command(Command.format(Command.WRITE_DO, channel, state))
 
     def write_gpio(self, gpio_num: int, state: int):
-        self.send_command(Command.format(Command.WRITE_GPIO, gpio_num, state))
+        return self.send_command(Command.format(Command.WRITE_GPIO, gpio_num, state))
 
     def setup_signal_mode(self, index: int, repeat: int, mode: SignalMode, options: int, is_slave: bool = False):
         self.send_command(Command.format(Command.SETUP_SIGNAL_MODE, index, repeat, mode.value, options, is_slave))

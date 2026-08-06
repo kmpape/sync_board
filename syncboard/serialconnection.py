@@ -143,6 +143,24 @@ class SerialConnection:
         self.send(command.encode("ascii"))
         return self.read_response(timeout_s, expected_response=expected_response)
 
+    def send_and_wait_for_text(
+        self,
+        command: str,
+        expected_text: str,
+        response_timeout_s: Optional[float] = None,
+    ) -> str:
+        """Send a legacy one-way command and wait for its textual status.
+
+        ``systemEnable`` and ``systemDisable`` predate the framed protocol but
+        print an unambiguous completion status.  Waiting for that status is a
+        real completion barrier, unlike sleeping for an arbitrary interval.
+        """
+        timeout_s = self.DEFAULT_RESPONSE_TIMEOUT_S if response_timeout_s is None else response_timeout_s
+        if timeout_s <= 0:
+            raise ValueError("response_timeout_s must be greater than zero")
+        self.send(command.encode("ascii"))
+        return self.read_text(expected_text, timeout_s)
+
     def read_response(
         self,
         response_timeout_s: Optional[float] = None,
@@ -183,6 +201,40 @@ class SerialConnection:
             # ``read(1)`` permits pyserial to block for at most the short
             # configured poll timeout.  Reading all currently buffered bytes
             # keeps long replies efficient without busy-spinning the CPU.
+            waiting = self.connection.in_waiting
+            chunk = self.connection.read(waiting if waiting > 0 else 1)
+            if chunk:
+                self._receive_buffer.extend(chunk)
+
+    def read_text(self, expected_text: str, response_timeout_s: Optional[float] = None) -> str:
+        """Wait for an unframed textual status line from legacy firmware."""
+        timeout_s = self.DEFAULT_RESPONSE_TIMEOUT_S if response_timeout_s is None else response_timeout_s
+        if timeout_s <= 0:
+            raise ValueError("response_timeout_s must be greater than zero")
+        expected = expected_text.encode("ascii")
+        if not expected:
+            raise ValueError("expected_text must not be empty")
+        if not self._synchronised:
+            raise SerialProtocolError("Serial connection is not synchronised; reconnect before reading")
+
+        deadline = time.monotonic() + timeout_s
+        while True:
+            if expected in self._receive_buffer:
+                response = self._receive_buffer.decode("ascii", errors="replace")
+                LOGGER.debug("Received legacy status: %s", response)
+                self._receive_buffer.clear()
+                return response
+
+            if len(self._receive_buffer) > self.MAX_FRAME_BYTES:
+                self._synchronised = False
+                raise SerialProtocolError("Serial status output exceeded maximum buffer size")
+
+            if time.monotonic() >= deadline:
+                self._synchronised = False
+                raise SerialResponseTimeout(
+                    "SyncBoard did not send {!r} within {:.3f} s".format(expected_text, timeout_s)
+                )
+
             waiting = self.connection.in_waiting
             chunk = self.connection.read(waiting if waiting > 0 else 1)
             if chunk:

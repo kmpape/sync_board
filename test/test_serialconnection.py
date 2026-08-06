@@ -93,6 +93,17 @@ class SerialConnectionTests(unittest.TestCase):
             "$setupLED/3#%",
         )
 
+    def test_waits_for_legacy_status_as_a_completion_barrier(self):
+        connection = self.new_connection()
+        connection.connection.reply_on_write = b"Enabled GPIOs and level shifters\r\nSystem enabled\r\n"
+
+        response = connection.send_and_wait_for_text(
+            "$systemEnable#%",
+            expected_text="System enabled",
+            response_timeout_s=0.1,
+        )
+        self.assertIn("System enabled", response)
+
     def test_timeout_marks_connection_unsynchronised(self):
         connection = self.new_connection()
 
@@ -106,6 +117,7 @@ class RecordingConnection:
     def __init__(self):
         self.sent = []
         self.requested = []
+        self.text_requests = []
 
     def send(self, data):
         self.sent.append(data)
@@ -115,6 +127,10 @@ class RecordingConnection:
         if expected_response == "Read value ":
             return "$Read value /2.5#%"
         return "${}/1#%".format(expected_response)
+
+    def send_and_wait_for_text(self, command, expected_text, response_timeout_s):
+        self.text_requests.append((command, expected_text, response_timeout_s))
+        return expected_text
 
 
 class ControllerProtocolTests(unittest.TestCase):
@@ -133,8 +149,10 @@ class ControllerProtocolTests(unittest.TestCase):
     def test_one_way_firmware_command_does_not_wait_for_a_reply(self):
         controller, connection = self.new_controller()
         controller.enable_system()
+        controller.setup_gpio(13, enable=1, mode=0, output_state=0)
 
-        self.assertEqual(connection.sent, [b"$systemEnable#%"])
+        self.assertEqual(connection.text_requests, [("$systemEnable#%", "System enabled", 2.0)])
+        self.assertEqual(connection.sent, [b"$setupGPIO/13/1/0/0#%"])
         self.assertEqual(connection.requested, [])
 
     def test_legacy_reply_name_is_matched_explicitly(self):
