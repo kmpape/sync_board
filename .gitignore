@@ -43,3 +43,4 @@ __pycache__/*
 syncboard/__pycache__/*
 Logs/*
 *.bin
+*.pyc
