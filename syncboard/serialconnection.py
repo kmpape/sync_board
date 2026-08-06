@@ -1,11 +1,20 @@
+"""Framed serial transport for the SyncBoard firmware.
+
+The firmware sends protocol messages as ``$...#%`` (followed by a newline).
+The ``%`` is the message delimiter; waiting for an arbitrary period of serial
+silence after seeing it only adds latency and cannot make a request safer.
+"""
+
+from contextlib import contextmanager
 from datetime import datetime
 import logging
 from logging.handlers import RotatingFileHandler
-from contextlib import contextmanager
-import serial
 import time
-from typing import List, Union
+from typing import Optional
+
+import serial
 from termios import error as TermiosError
+
 
 LOGGING_LEVEL = logging.INFO
 FORMATTER = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
@@ -18,15 +27,47 @@ handler.setFormatter(FORMATTER)
 LOGGER.addHandler(handler)
 LOGGER.propagate = False
 filename = "syncboard_serial_{}.log".format(datetime.now().strftime("%Y-%m-%d_%H:%M:%S.%f"))
-file_handler = RotatingFileHandler(f"/home/hslab/workspace_python/conda_evomachine3.9/sync_board/Logs/{filename}", maxBytes=1000000, backupCount=20)
+file_handler = RotatingFileHandler(
+    f"/home/hslab/workspace_python/conda_evomachine3.9/sync_board/Logs/{filename}",
+    maxBytes=1000000,
+    backupCount=20,
+)
 file_handler.setFormatter(FORMATTER)
 file_handler.setLevel(logging.INFO)
 LOGGER.addHandler(file_handler)
 
 
+class SerialResponseTimeout(serial.SerialException):
+    """A request was written, but no complete protocol frame arrived in time.
+
+    The board may have received and executed the request.  Callers must not
+    resend it automatically because the protocol contains no request ID with
+    which to distinguish a delayed reply from a reply to the retried command.
+    """
+
+
+class SerialProtocolError(serial.SerialException):
+    """The serial stream exceeded a safe frame size without a valid frame."""
+
+
 class SerialConnection:
+    """A synchronous, framed connection to a SyncBoard.
+
+    Calls are expected to be serialized by :class:`SyncBoardController`.  A
+    reply is read until the firmware's ``%`` delimiter, so normal requests
+    return as soon as their bytes arrive rather than after a fixed quiet time.
+    """
+
     NUM_SIG_FIG_FLOAT = 7
-    DEBUG_MODE = False
+    FRAME_START = b"$"
+    FRAME_END = b"#%"
+    # This controls only how long a missing reply is tolerated.  A normal
+    # request returns immediately on ``#%``, so a generous deadline has no
+    # effect on command latency while allowing the firmware to finish a busy
+    # loop iteration before handling a request.
+    DEFAULT_RESPONSE_TIMEOUT_S = 1.0
+    DEFAULT_READ_TIMEOUT_S = 0.001
+    MAX_FRAME_BYTES = 16 * 1024
 
     def __init__(
         self,
@@ -34,15 +75,19 @@ class SerialConnection:
         baud_rate: int,
         num_data_bits: int = serial.EIGHTBITS,
         num_stop_bits: int = serial.STOPBITS_ONE,
-        read_timeout_s: float = 1,
+        read_timeout_s: float = DEFAULT_READ_TIMEOUT_S,
     ):
-        LOGGER.debug(f"Connecting to {port} at {baud_rate} baud")
+        if read_timeout_s <= 0:
+            raise ValueError("read_timeout_s must be greater than zero")
 
-        self.port: str = port
-        self.baud_rate: int = baud_rate
-        self.num_data_bits: int = num_data_bits
-        self.num_stop_bits: int = num_stop_bits
-        self.read_timeout_s: float = read_timeout_s
+        LOGGER.debug("Connecting to %s at %s baud", port, baud_rate)
+        self.port = port
+        self.baud_rate = baud_rate
+        self.num_data_bits = num_data_bits
+        self.num_stop_bits = num_stop_bits
+        self.read_timeout_s = read_timeout_s
+        self._receive_buffer = bytearray()
+        self._synchronised = True
 
         self.connection = serial.Serial(
             port=port,
@@ -54,82 +99,127 @@ class SerialConnection:
 
     @classmethod
     @contextmanager
-    def connection(cls, *args, **kwargs):
+    def open(cls, *args, **kwargs):
+        """Open a connection for a ``with`` block."""
         serial_connection = cls(*args, **kwargs)
-        yield serial_connection
-        serial_connection.disconnect()
-        LOGGER.warning("SyncBoardController.SerialConnection: Disconnected from syncboard.")
+        try:
+            yield serial_connection
+        finally:
+            serial_connection.disconnect()
 
     def reset_buffers(self):
+        """Discard stale input only; never discard data queued for writing."""
         try:
+            self._receive_buffer.clear()
             self.connection.reset_input_buffer()
-            self.connection.reset_output_buffer()
-        except TermiosError as e:
-            LOGGER.warning(e)
+        except TermiosError as exc:
+            LOGGER.warning("Failed to reset serial input buffer: %s", exc)
             self.connection.close()
             self.connection.open()
 
-    def send(self, data: bytes):
+    def send(self, data: bytes) -> None:
+        """Write a command without expecting a response.
+
+        This is only safe for firmware commands documented not to send a
+        protocol reply.  Reply-producing commands must use ``send_command``;
+        otherwise their reply could be consumed by a later request.
+        """
+        if not self._synchronised:
+            raise SerialProtocolError("Serial connection is not synchronised; reconnect before sending")
         self.reset_buffers()
-        LOGGER.debug(f"Sending data: {data}")
+        LOGGER.debug("Sending data: %r", data)
         self.connection.write(data)
 
-    def send_command(self, command: str) -> Union[None, List[str]]:
-        encoded_command = command.encode()
-        self.send(encoded_command)
-        if self.DEBUG_MODE:
-            responses = self.read_responses(wait_time=10)
-        else:
-            responses = self.read_responses(wait_time=0.05)
+    def send_command(
+        self,
+        command: str,
+        response_timeout_s: Optional[float] = None,
+        expected_response: Optional[str] = None,
+    ) -> str:
+        """Send one command and return exactly one complete protocol reply."""
+        timeout_s = self.DEFAULT_RESPONSE_TIMEOUT_S if response_timeout_s is None else response_timeout_s
+        if timeout_s <= 0:
+            raise ValueError("response_timeout_s must be greater than zero")
+        self.send(command.encode("ascii"))
+        return self.read_response(timeout_s, expected_response=expected_response)
 
-        if not responses:
-            msg = f"SyncBoardController.SerialConnection: syncboard did not respond on command {command}."
-            LOGGER.error(msg)
-            raise serial.serialutil.SerialException(msg)
-        else:
-            msg = f"SyncBoardController.SerialConnection: syncboard responded with {responses} to {command}."
-            LOGGER.info(msg)
+    def read_response(
+        self,
+        response_timeout_s: Optional[float] = None,
+        expected_response: Optional[str] = None,
+    ) -> str:
+        """Return the next ``$...#%`` frame before the total timeout expires."""
+        timeout_s = self.DEFAULT_RESPONSE_TIMEOUT_S if response_timeout_s is None else response_timeout_s
+        if timeout_s <= 0:
+            raise ValueError("response_timeout_s must be greater than zero")
+        if not self._synchronised:
+            raise SerialProtocolError("Serial connection is not synchronised; reconnect before reading")
 
-        return responses
+        deadline = time.monotonic() + timeout_s
+        while True:
+            frame = self._pop_frame()
+            if frame is not None:
+                response = frame.decode("ascii", errors="replace")
+                response_name = self._frame_name(response)
+                if expected_response is None or response_name in (expected_response, "error"):
+                    LOGGER.debug("Received: %s", response)
+                    return response
+                # A few legacy commands emit an informational protocol frame
+                # before their actual completion frame.  It is safe to ignore
+                # only because the caller named the reply it is waiting for.
+                LOGGER.debug("Ignoring intermediate protocol response: %s", response)
 
-    def read_response(self, wait_time: float = 0) -> str:
-        """
-        Reads the response from a serial port. Returns an empty str if no data available.
+            if len(self._receive_buffer) > self.MAX_FRAME_BYTES:
+                self._synchronised = False
+                raise SerialProtocolError("Serial response exceeded maximum frame size")
 
-        Parameters
-        ----------
-        wait_time: float
-            Wait wait_time (in seconds) until the first response appears on the serial port.
+            remaining_s = deadline - time.monotonic()
+            if remaining_s <= 0:
+                self._synchronised = False
+                raise SerialResponseTimeout(
+                    "SyncBoard did not send a complete protocol response within {:.3f} s".format(timeout_s)
+                )
 
-        Returns
-        -------
-        response: str
-            Stripped response string. Empty string if no response.
-        """
-        # TODO consider strings starting with "error/"
-        response = self.connection.readline().decode()
-        LOGGER.debug(f"Received: {response}")
-        if wait_time > 0 and response == '':
-            start_time = time.perf_counter()
-            while time.perf_counter() - start_time < wait_time:
-                if self.connection.in_waiting > 0:
-                    response = self.connection.readline().decode()
-                if response != '':
-                    break
-        return response.strip()
+            # ``read(1)`` permits pyserial to block for at most the short
+            # configured poll timeout.  Reading all currently buffered bytes
+            # keeps long replies efficient without busy-spinning the CPU.
+            waiting = self.connection.in_waiting
+            chunk = self.connection.read(waiting if waiting > 0 else 1)
+            if chunk:
+                self._receive_buffer.extend(chunk)
 
-    def read_responses(self, wait_time: float) -> List[str]:
-        data = []
-        start_time = time.perf_counter()
-        while time.perf_counter() - start_time < wait_time:
-            if self.connection.in_waiting > 0:
-                data.append(self.read_response(wait_time=wait_time))
-        # response = self.connection.readline().decode()
-        LOGGER.debug(f"Received: {data}")
+    def _pop_frame(self) -> Optional[bytes]:
+        """Extract one valid frame, retaining any following bytes."""
+        start = self._receive_buffer.find(self.FRAME_START)
+        if start == -1:
+            # Preserve a possible split start byte and discard debug output.
+            if self._receive_buffer:
+                LOGGER.debug("Discarding non-protocol serial output: %r", bytes(self._receive_buffer))
+                self._receive_buffer.clear()
+            return None
+        if start:
+            LOGGER.debug("Discarding non-protocol serial output: %r", bytes(self._receive_buffer[:start]))
+            del self._receive_buffer[:start]
 
-        return data
+        end = self._receive_buffer.find(self.FRAME_END)
+        if end == -1:
+            return None
+        end += len(self.FRAME_END)
+        frame = bytes(self._receive_buffer[:end])
+        del self._receive_buffer[:end]
+        return frame
+
+    @staticmethod
+    def _frame_name(frame: str) -> str:
+        """Return the command portion of a decoded ``$name/args#%`` frame."""
+        payload = frame[1:-2]
+        return payload.split("/", 1)[0].rstrip("#")
 
     def disconnect(self):
         LOGGER.debug("Disconnecting from serial port...")
         self.connection.close()
         LOGGER.debug("Disconnected")
+
+    # Kept for callers of the original context-manager API.  Instances still
+    # expose ``.connection`` as the underlying pyserial object.
+    connection = open
