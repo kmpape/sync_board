@@ -58,6 +58,7 @@ class LED_ID(int, Enum):
     LED_565_NM = 3
     LED_645_NM = 4
     LED_385_NM = 7
+    LED_DPC = 8
     NO_LED = -1
 
 
