@@ -41,8 +41,11 @@
 # Python
 __pycache__/*
 syncboard/__pycache__/*
+*.bin
+*.pyc
 
 # Runtime logs (serialconnection RotatingFileHandler)
+Logs/*
 logs/
 *.log
 *.egg-info/

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from enum import Enum
 import logging
 import re
@@ -7,7 +9,7 @@ import time
 import threading
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from syncboard.serialconnection import SerialConnection
+from syncboard.serialconnection import SerialConnection, SerialProtocolError, SerialResponseTimeout
 from syncboard.command import Command
 
 
@@ -47,6 +49,7 @@ class LED_ID(int, Enum):
     LED_565_NM = 3
     LED_645_NM = 4
     LED_385_NM = 7
+    LED_DPC = 8
     NO_LED = -1
 
 
@@ -54,8 +57,10 @@ class SyncBoardController:
     # LED_ID = [1, 2, 3, 4, 7]
     LED_MAX_CURRENT = {1: 10.0, 2: 8.0, 3: 12.0, 4: 8.0, 7: 6.0}
     DEFAULT_POLL_INTERVAL_S = 0.01
+    DEFAULT_RESPONSE_TIMEOUT_S = 1.0
+    SYSTEM_STATE_TIMEOUT_S = 2.0
+    LED_CALIBRATION_TIMEOUT_S = 60.0
     MAX_RECONNECT_ATTEMPTS = 100
-    MAX_RESEND_ATTEMPTS = 10
 
     def __init__(
         self,
@@ -73,10 +78,7 @@ class SyncBoardController:
         self._is_initialised: bool = False
         "Set to true after initialise(). Set to false after finalise()."
         self._num_reconnect_attempts: int = 0
-        "Counter only reset here. Will raise RunTimeError when MAX_RECONNECT_ATTEMPTS is reached."
-        self._num_resend_attempts: int = 0
-        "Counter resets every time send_command is called."
-
+        "Resets after a successful reconnect; guards against repeated failures."
         # LED configurations
         self._led_configs: Dict[LED_ID, Dict[str, Union[int, float, None, str]]] = {
             led_id: {'mode': None, 'intensity': None, 'status': None, 'stop_time': None} for led_id in LED_ID.__members__.values()
@@ -111,16 +113,29 @@ class SyncBoardController:
         self.send_command(Command.format(Command.ATTACH_MAGNET, True))
 
     def enable_magnet(self, enable: bool = True):
-        self.send_command(Command.format(Command.ENABLE_MAGNET, enable))
+        self.send_command(
+            Command.format(Command.ENABLE_MAGNET, enable),
+            expected_response="Enabled magnet ",
+        )
     
     def set_magnet_current(self, current: float, NC: bool = True):
-        self.send_command(Command.format(Command.SET_MAGNET_CURRENT, int(NC), current))
+        self.send_command(
+            Command.format(Command.SET_MAGNET_CURRENT, int(NC), current),
+            expected_response="Set magnet current",
+        )
         
     def set_magnet_field(self, field: float, NC: bool = True):
-        self.send_command(Command.format(Command.SET_MAGNET_FIELD, int(NC), field))
+        self.send_command(
+            Command.format(Command.SET_MAGNET_FIELD, int(NC), field),
+            expected_response="Set magnetic field",
+        )
     
     def read_hall(self, hall_id: int) -> float:
-        response = self.send_command(Command.format(Command.READ_HALL, hall_id), wait_time=0.1)
+        response = self.send_command(
+            Command.format(Command.READ_HALL, hall_id),
+            wait_time=0.1,
+            expected_response="Read value ",
+        )
         # print(response)
         return float(float_rgx.search(response).group())
     
@@ -133,18 +148,33 @@ class SyncBoardController:
         #     raise ValueError(f"LED ID {led_id} not available. Must be in {self.LED_ID}.")
         max_current = self.LED_MAX_CURRENT[led_id] if max_current is None else max_current
         LOGGER.info(f"Calibrating LED {led_id} with max current {max_current}.")
-        self.send_command(Command.format(Command.CALIBRATE_LED, led_id.value, max_current))
+        self.send_command(
+            Command.format(Command.CALIBRATE_LED, led_id.value, max_current),
+            wait_time=self.LED_CALIBRATION_TIMEOUT_S,
+        )
 
     def calibrate_magnet(self):
-        response = self.send_command(Command.format(Command.CALIBRATE_MAGNET), wait_time=5)
+        response = self.send_command(
+            Command.format(Command.CALIBRATE_MAGNET),
+            wait_time=5,
+            expected_response="Calibrated magnet",
+        )
         # print(response)
 
     def calibrate_hall(self, hall_id: int):
-        response = self.send_command(Command.format(Command.CALIBRATE_HALL, hall_id), wait_time=2)
+        response = self.send_command(
+            Command.format(Command.CALIBRATE_HALL, hall_id),
+            wait_time=2,
+            expected_response=f"Calibrated Hall sensor {hall_id}",
+        )
         # print(response)
 
     def disable_system(self):
-        self.send_command(Command.format(Command.SYSTEM_DISABLE))
+        self.send_and_wait_for_text(
+            Command.format(Command.SYSTEM_DISABLE),
+            "System disabled",
+            response_timeout_s=self.SYSTEM_STATE_TIMEOUT_S,
+        )
 
     def disable_led(
             self,
@@ -205,13 +235,20 @@ class SyncBoardController:
             self._led_configs[led_id]['stop_time'] = time.time() + duration / 1000.0
 
     def enable_magnet(self, enable: bool = True):
-        self.send_command(Command.format(Command.ENABLE_MAGNET, enable))
+        self.send_command(
+            Command.format(Command.ENABLE_MAGNET, enable),
+            expected_response="Enabled magnet ",
+        )
 
     def enable_system(self):
-        self.send_command(Command.format(Command.SYSTEM_ENABLE))
+        self.send_and_wait_for_text(
+            Command.format(Command.SYSTEM_ENABLE),
+            "System enabled",
+            response_timeout_s=self.SYSTEM_STATE_TIMEOUT_S,
+        )
 
     def factory_reset(self):
-        self.send_command(Command.format(Command.FACTORY_RESET))
+        self.send_without_response(Command.format(Command.FACTORY_RESET))
 
     def finalise(self):
         self.disable_system()
@@ -239,7 +276,11 @@ class SyncBoardController:
                                                                time.time() > self._led_configs[led_id]['stop_time'])
 
     def read_hall(self, hall_id: int) -> float:
-        response = self.send_command(Command.format(Command.READ_HALL, hall_id), wait_time=0.1)
+        response = self.send_command(
+            Command.format(Command.READ_HALL, hall_id),
+            wait_time=0.1,
+            expected_response="Read value ",
+        )
         # print(response)
         return float(float_rgx.search(response).group())
 
@@ -281,48 +322,108 @@ class SyncBoardController:
             raise RuntimeError(msg)
         msg = f"SyncBoardController.reconnect: successfully reconnected on port {self.port}."
         LOGGER.warning(msg)
+        self._num_reconnect_attempts = 0
 
     def fast_send_command(self, command: str) -> None:
+        """Compatibility alias for a normal framed command.
+
+        ``switchLED`` replies, so skipping its reply would desynchronise the
+        next command.  Framed reads make this fast without sacrificing that
+        invariant.
+        """
+        self.send_command(command)
+
+    def send_without_response(self, command: str) -> None:
+        """Send a firmware command that is documented not to reply."""
         with self._lock:
             try:
-                self.connection.send_command(command)
-            except (TermiosError, serial.serialutil.SerialException, serial.SerialException, OSError) as e:
-                msg = f"SyncBoardController.fast_send_command: received error: {e}"
-                LOGGER.error(msg)
-                time.sleep(1)
-                self.reconnect()
+                self.connection.send(command.encode("ascii"))
+            except (TermiosError, serial.serialutil.SerialException, serial.SerialException, OSError) as exc:
+                self._recover_transport("send_without_response", exc)
+                raise
 
-    def send_command(self, command: str, wait_time: float = 0) -> str:
-        self._num_resend_attempts = 0
-        LOGGER.debug(f"Sending command {command} at attempt {self._num_resend_attempts}.")
-        response = ""
-        while self._num_resend_attempts < self.MAX_RESEND_ATTEMPTS:
-            with self._lock:
-                try:
-                    self.connection.send_command(command)  # TODO we may send a command twice here
-                    response = self.connection.read_response(wait_time=wait_time)
-                    if 'error' in response:  # these are syncboard errors
-                        LOGGER.error(response.rstrip('#%').lstrip('$error/'))
-                    break  # exit while loop
-                except (TermiosError, serial.serialutil.SerialException, serial.SerialException, OSError) as e:
-                    msg = f"SyncBoardController.send_command: received error: {e}"
-                    LOGGER.error(msg)
-                    time.sleep(1)
-                    self.reconnect()
-            self._num_resend_attempts += 1
+    def send_and_wait_for_text(
+        self,
+        command: str,
+        expected_text: str,
+        response_timeout_s: float,
+    ) -> str:
+        """Use a legacy textual completion message as a command barrier."""
+        with self._lock:
+            try:
+                return self.connection.send_and_wait_for_text(
+                    command,
+                    expected_text=expected_text,
+                    response_timeout_s=response_timeout_s,
+                )
+            except (TermiosError, SerialProtocolError, serial.serialutil.SerialException, serial.SerialException, OSError) as exc:
+                self._recover_transport("send_and_wait_for_text", exc)
+                raise
+
+    def send_command(
+        self,
+        command: str,
+        wait_time: float = 0,
+        expected_response: Optional[str] = None,
+    ) -> str:
+        """Send a reply-producing command and wait only for its framed reply.
+
+        ``wait_time`` is retained for API compatibility and is now a total
+        response deadline.  It is no longer an unconditional post-reply wait.
+        """
+        response_timeout_s = wait_time if wait_time > 0 else self.DEFAULT_RESPONSE_TIMEOUT_S
+        expected_response = expected_response or self._command_name(command)
+        with self._lock:
+            try:
+                response = self.connection.send_command(
+                    command,
+                    response_timeout_s=response_timeout_s,
+                    expected_response=expected_response,
+                )
+            except SerialResponseTimeout as exc:
+                # The command may have been executed.  Never replay it: this
+                # protocol has no request ID to make a retry unambiguous.
+                self._recover_transport("send_command", exc)
+                raise
+            except (TermiosError, SerialProtocolError, serial.serialutil.SerialException, serial.SerialException, OSError) as exc:
+                self._recover_transport("send_command", exc)
+                raise
+
+        if self._command_name(response) == "error":
+            LOGGER.error(response.rstrip('#%').removeprefix('$error/'))
         return response
+
+    @staticmethod
+    def _command_name(frame: str) -> str:
+        payload = frame.lstrip('$').rstrip('#%')
+        return payload.split('/', 1)[0]
+
+    def _recover_transport(self, operation: str, exc: Exception) -> None:
+        LOGGER.error("SyncBoardController.%s: received error: %s", operation, exc)
+        try:
+            self.reconnect()
+        except Exception as reconnect_exc:
+            LOGGER.error("SyncBoardController.%s: reconnect failed: %s", operation, reconnect_exc)
 
     def set_dac(self, channel: int, voltage: float):
         self.send_command(Command.format(Command.SET_DAC, channel, voltage))
 
     def set_magnet_current(self, current: float, NC: bool = True):
-        self.send_command(Command.format(Command.SET_MAGNET_CURRENT, int(NC), current))
+        self.send_command(
+            Command.format(Command.SET_MAGNET_CURRENT, int(NC), current),
+            expected_response="Set magnet current",
+        )
 
     def set_magnet_field(self, field: float, NC: bool = True):
-        self.send_command(Command.format(Command.SET_MAGNET_FIELD, int(NC), field))
+        self.send_command(
+            Command.format(Command.SET_MAGNET_FIELD, int(NC), field),
+            expected_response="Set magnetic field",
+        )
 
     def setup_gpio(self, gpio_num: int, enable: int, mode: int, output_state: int):
-        self.send_command(Command.format(Command.SETUP_GPIO, gpio_num, enable, mode, output_state))
+        # The current firmware prints a diagnostic but does not send a framed
+        # response for setupGPIO, so this must remain a one-way command.
+        self.send_without_response(Command.format(Command.SETUP_GPIO, gpio_num, enable, mode, output_state))
 
     def setup_led(
             self,
@@ -359,17 +460,17 @@ class SyncBoardController:
             self.setup_led(led_id=_led_id)
 
     def setup_magnet(self):
-        self.send_command(Command.format(Command.SETUP_MAGNET))
+        self.send_command(Command.format(Command.SETUP_MAGNET), expected_response="Setup magnet board complete")
 
     def setup_signal_dac(self):
         # TODO
         return
 
     def write_do(self, channel: int, state: int):
-        self.send_command(Command.format(Command.WRITE_DO, channel, state))
+        return self.send_command(Command.format(Command.WRITE_DO, channel, state))
 
     def write_gpio(self, gpio_num: int, state: int):
-        self.send_command(Command.format(Command.WRITE_GPIO, gpio_num, state))
+        return self.send_command(Command.format(Command.WRITE_GPIO, gpio_num, state))
 
     def setup_signal_mode(self, index: int, repeat: int, mode: SignalMode, options: int, is_slave: bool = False):
         self.send_command(Command.format(Command.SETUP_SIGNAL_MODE, index, repeat, mode.value, options, is_slave))
@@ -398,7 +499,8 @@ class SyncBoardController:
         self.send_command(Command.format(Command.STOP_SIGNAL, index))
 
     def scan_i2c(self):
-        return self.send_command(Command.format(Command.SCAN_I2C))
+        self.send_without_response(Command.format(Command.SCAN_I2C))
+        return ""
 
     def _is_equal_led_config(
             self,
