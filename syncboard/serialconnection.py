@@ -1,40 +1,13 @@
-"""Framed serial transport for the SyncBoard firmware.
-
-The firmware sends protocol messages as ``$...#%`` (followed by a newline).
-The ``%`` is the message delimiter; waiting for an arbitrary period of serial
-silence after seeing it only adds latency and cannot make a request safer.
-"""
-
-from contextlib import contextmanager
-from datetime import datetime
 import logging
-from logging.handlers import RotatingFileHandler
+from contextlib import contextmanager
+import serial
 import time
 from typing import Optional
 
 import serial
 from termios import error as TermiosError
 
-
-LOGGING_LEVEL = logging.INFO
-FORMATTER = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 LOGGER = logging.getLogger(__name__)
-for handler in LOGGER.handlers:
-    LOGGER.removeHandler(handler)
-LOGGER.setLevel(LOGGING_LEVEL)
-handler = logging.StreamHandler()
-handler.setFormatter(FORMATTER)
-LOGGER.addHandler(handler)
-LOGGER.propagate = False
-filename = "syncboard_serial_{}.log".format(datetime.now().strftime("%Y-%m-%d_%H:%M:%S.%f"))
-file_handler = RotatingFileHandler(
-    f"/home/hslab/workspace_python/conda_evomachine3.9/sync_board/Logs/{filename}",
-    maxBytes=1000000,
-    backupCount=20,
-)
-file_handler.setFormatter(FORMATTER)
-file_handler.setLevel(logging.INFO)
-LOGGER.addHandler(file_handler)
 
 
 class SerialResponseTimeout(serial.SerialException):

@@ -1,2 +1,3 @@
 import logging
-from syncboard import syncboardcontroller
+
+logging.getLogger(__name__).addHandler(logging.NullHandler())
