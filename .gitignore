@@ -49,3 +49,7 @@ Logs/*
 logs/
 *.log
 *.egg-info/
+
+# uv/venv
+.venv/
+uv.lock

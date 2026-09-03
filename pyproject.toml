@@ -4,10 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "syncboard"
-version = "0.1.0"
-description = "Python interface for the evomachine SyncBoard (Teensy) serial controller."
+version = "2.0.0"
+description = "Python client for the SyncBoard (Teensy) microscope controller."
 requires-python = ">=3.11"
 dependencies = ["pyserial>=3.5"]
 
+[dependency-groups]
+dev = ["pytest>=8"]
+
 [tool.setuptools]
 packages = ["syncboard"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
