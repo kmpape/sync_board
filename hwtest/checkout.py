@@ -176,9 +176,9 @@ class Checkout:
         self.banner(f"LED board (channel {channel})")
         answer = input("  Run LED calibration first? Needed once per LED. [y/N]: ")
         if answer.strip().lower() == "y":
-            max_current = float(input("  Max LED current in A (e.g. 5.0): "))
+            raw = input("  Max LED current in A (blank = channel's rated default): ").strip()
             print("  Calibrating (takes a few seconds, LED will flash)...")
-            self.board.leds.calibrate(channel, max_current)
+            self.board.leds.calibrate(channel, float(raw) if raw else None)
             self.auto("LED calibration", True, "completed without error")
         self.board.leds.set_level(channel, 0.05)
         print("  Pulsing the LED at 5% for 500 ms...")

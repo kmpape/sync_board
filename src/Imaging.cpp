@@ -72,6 +72,12 @@ void startImage() {
     if (!digitalReadFast(pins::kCameraTriggerReady)) {
       protocol::logf("ERROR: camera triggered before it reported ready");
     }
+    if (cameraTriggerHigh) {
+      // Previous frame's pulse still high (very short frame): give the
+      // camera a clean falling edge before re-triggering.
+      digitalWriteFast(pins::kCameraTriggerIn, LOW);
+      delayMicroseconds(5);
+    }
     digitalWriteFast(pins::kCameraTriggerIn, HIGH);
     cameraTriggerHigh = true;
     cameraTriggerStartUs = micros();
@@ -223,12 +229,12 @@ void tick() {
     cameraTriggerHigh = false;
   }
 
-  if (mode == 0) return;
-
-  // Edge-detect the trigger inputs.
+  // Edge-detect the trigger inputs. The baseline is tracked even in sync
+  // mode 0, so switching modes does not turn an old level change into a
+  // spurious fresh edge.
   for (int i = 0; i < kNumTriggers; i++) {
     const int state = digitalReadFast(kTriggerPins[i]);
-    if (state != prevTriggerState[i]) {
+    if (state != prevTriggerState[i] && mode != 0) {
       if (i < 4) {
         handleLedTrigger(i, state);
       } else if (mode == 2 && state) {
@@ -237,6 +243,7 @@ void tick() {
     }
     prevTriggerState[i] = state;
   }
+  if (mode == 0) return;
 
   if (!running || currentImage < 0) return;
 

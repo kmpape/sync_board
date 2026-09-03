@@ -343,8 +343,13 @@ void cmdSetupSignal() {
   const bool repeat = argBool(3);
   const bool isSlave = argBool(4);
   if (faultPending()) return;
-  if (mode < 0 || option < 0) {
-    fault("mode and option must be non-negative");
+  // Range-check before the cast: enum conversion would wrap mod 256.
+  if (mode < 0 || mode > (int)signals::Mode::kGpioWrite) {
+    fault("unsupported signal mode %d", mode);
+    return;
+  }
+  if (option < 0) {
+    fault("option must be non-negative");
     return;
   }
   signals::configure(index, (signals::Mode)mode, (uint32_t)option, repeat, isSlave);

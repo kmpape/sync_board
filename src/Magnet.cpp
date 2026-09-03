@@ -184,6 +184,10 @@ void calibrate() {
   enable(false);
   if (!noOk) return;
 
+  // Park both outputs at their zero-current setpoints; otherwise the next
+  // enable() would drive the last sweep current through the coil.
+  setDac(kDacNcCh, interceptNc);
+  setDac(kDacNoCh, interceptNo);
   selectOutput(true);
   magnetCalibrated = true;
 }
@@ -214,6 +218,7 @@ void calibrateHall(int hallId) {
     for (int a = 0; a < kCalAvg; a++) mT[p] += readHallMilliTesla(hallId);
     mT[p] /= (float)kCalAvg;
   }
+  setCurrent(true, 0.0f);  // park at zero before disabling
   enable(false);
 
   float sx = 0, sy = 0, sxy = 0, sxx = 0;

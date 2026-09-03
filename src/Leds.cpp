@@ -129,20 +129,22 @@ void setLevel(int channel, float level, bool currentFeedback) {
   float volts = 0.0f;
   if (level > 0.0f) {
     const calibration::LedCal& cal = calibration::led(channel);
-    if (currentFeedback) {
-      if (!cal.validCurrent()) {
-        protocol::fault("LED %d is not calibrated; run calibrateLed first", channel);
-        return;
-      }
-      volts = cal.turnOnVCurrent + level * (cal.maxVCurrent - cal.turnOnVCurrent);
-    } else {
-      if (!cal.validPower()) {
-        protocol::fault(
-            "LED %d has no optical calibration (uncalibrated, or no optical sensor)", channel);
-        return;
-      }
-      volts = cal.turnOnVPower + level * (cal.maxVPower - cal.turnOnVPower);
+    const bool valid = currentFeedback ? cal.validCurrent() : cal.validPower();
+    if (!valid) {
+      // Force the setpoint to zero so a stale previous level cannot fire at
+      // full power through a later switch-on, then report the problem.
+      setRawVolts(channel, 0.0f);
+      levelSet[channel - 1] = 0.0f;
+      protocol::fault(
+          currentFeedback
+              ? "LED %d is not calibrated; run calibrateLed first"
+              : "LED %d has no optical calibration (uncalibrated, or no optical sensor)",
+          channel);
+      return;
     }
+    volts = currentFeedback
+                ? cal.turnOnVCurrent + level * (cal.maxVCurrent - cal.turnOnVCurrent)
+                : cal.turnOnVPower + level * (cal.maxVPower - cal.turnOnVPower);
   }
   setRawVolts(channel, volts);
   levelSet[channel - 1] = level;
@@ -150,6 +152,12 @@ void setLevel(int channel, float level, bool currentFeedback) {
 
 void switchOn(int channel, bool on, bool force) {
   if (!validChannel(channel)) return;
+  // Guarded here (not only in the command handlers) because the signal
+  // engine and imaging call in directly.
+  if (!gLedAttached) {
+    protocol::fault("LED board not attached");
+    return;
+  }
   if (on && !force && levelSet[channel - 1] > kMaxUntimedLevel) {
     protocol::fault(
         "refusing to leave LED %d on untimed above %.0f%% power (heat risk if the host "
@@ -163,6 +171,10 @@ void switchOn(int channel, bool on, bool force) {
 
 void switchTimed(int channel, float durationMs) {
   if (!validChannel(channel)) return;
+  if (!gLedAttached) {
+    protocol::fault("LED board not attached");
+    return;
+  }
   // The 30 min cap keeps the end-time comparison safely inside the 32-bit
   // micros() wrap window.
   if (durationMs <= 0.0f || durationMs > 30.0f * 60.0f * 1000.0f) {

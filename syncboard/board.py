@@ -71,10 +71,15 @@ class LedSetup:
 
 @dataclass(frozen=True)
 class Frame:
-    """One frame of an image sequence."""
+    """One frame of an image sequence.
+
+    ``exposure_ms = 0`` means the frame is ended by the camera's LED gating
+    signal and is only meaningful with ``led_by_camera=True``; otherwise the
+    frame would end immediately.
+    """
 
     led: int = 0             # LED channel lit during the frame; 0 = none
-    exposure_ms: float = 0.0  # 0 = ended by the camera's LED gating signal
+    exposure_ms: float = 0.0
 
 
 class SyncBoard:
@@ -185,15 +190,30 @@ class SyncBoard:
 class LedApi:
     CALIBRATE_TIMEOUT_S = 60.0
 
+    #: Rated maximum current per channel for the LEDs installed on this
+    #: microscope. Update when the physical LEDs change; calibrate() refuses
+    #: to default a channel that is not listed here.
+    MAX_CURRENT_A: dict[int, float] = {1: 10.0, 2: 8.0, 3: 12.0, 4: 8.0, 7: 6.0}
+
     def __init__(self, transport: Transport):
         self._t = transport
 
-    def calibrate(self, channel: int, max_current_a: float) -> None:
-        """Sweeps the LED to map levels 0..1 onto [turn-on, max_current_a].
+    def calibrate(self, channel: int, max_current_a: float | None = None) -> None:
+        """Sweeps the LED to map levels 0..1 onto [turn-on, max current].
 
-        Run once per newly connected LED; the result is stored in EEPROM.
-        Blocks for a few seconds and flashes the LED.
+        The max current defaults to the channel's rating in
+        :attr:`MAX_CURRENT_A`; pass it explicitly only when you know the
+        installed LED tolerates it. Run once per newly connected LED; the
+        result is stored in EEPROM. Blocks for a few seconds and flashes
+        the LED.
         """
+        if max_current_a is None:
+            if channel not in self.MAX_CURRENT_A:
+                raise ValueError(
+                    f"no rated current known for LED channel {channel}; "
+                    f"pass max_current_a explicitly (and update LedApi.MAX_CURRENT_A)"
+                )
+            max_current_a = self.MAX_CURRENT_A[channel]
         self._t.request("calibrateLed", channel, float(max_current_a),
                         timeout=self.CALIBRATE_TIMEOUT_S)
 

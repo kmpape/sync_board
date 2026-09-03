@@ -156,6 +156,11 @@ void configure(int index, Mode mode, uint32_t option, bool repeat, bool isSlave)
     protocol::fault("unsupported signal mode %d", (int)mode);
     return;
   }
+  if (mode == Mode::kConductor && isSlave) {
+    // A conductor slaved to another conductor would recurse unboundedly.
+    protocol::fault("a conductor signal cannot itself be a slave");
+    return;
+  }
   if (mode == Mode::kDo || mode == Mode::kDoTimed) {
     if (option < 1 || option > 4) {
       protocol::fault("digital output option %lu out of range 1..4", (unsigned long)option);
@@ -170,6 +175,9 @@ void configure(int index, Mode mode, uint32_t option, bool repeat, bool isSlave)
   s.option = option;
   s.repeat = repeat;
   s.isSlave = isSlave;
+  // Stored step data was interpreted under the previous configuration (e.g.
+  // slave signals store no delays), so force a fresh load.
+  s.count = 0;
 }
 
 void load(int index, int count, const float* values, const float* delaysMs) {
@@ -183,6 +191,8 @@ void load(int index, int count, const float* values, const float* delaysMs) {
     protocol::fault("signal length %d out of range 1..%d", count, kMaxLength);
     return;
   }
+  s.count = 0;  // invalidate until fully loaded, so a mid-load fault cannot
+                // leave a runnable mix of old and new steps
   bool dacRateWarned = false;
   for (int i = 0; i < count; i++) {
     s.data[i] = values[i];
@@ -222,6 +232,7 @@ void loadUniform(int index, int count, float intervalMs) {
     protocol::fault("signal length %d out of range 1..%d", count, kMaxLength);
     return;
   }
+  s.count = 0;  // see load()
   const int32_t delayUs = (int32_t)(intervalMs * 1000.0f);
   if (delayUs <= 0) {
     protocol::fault("interval %.3f ms is invalid", (double)intervalMs);

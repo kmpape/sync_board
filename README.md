@@ -123,4 +123,5 @@ code in the same step. Notable behavioural changes:
 - The magnet enable/select GPIO lines are (re)configured by `setupMagnet`
   after each system enable, not only at attach time.
 - Wavelength→LED-channel mappings (e.g. 450 nm = channel 5) are application
-  configuration and no longer live in this package.
+  configuration and no longer live in this package. The per-channel rated
+  current table survives as `LedApi.MAX_CURRENT_A` (the `calibrate` default).

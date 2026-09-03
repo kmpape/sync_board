@@ -147,10 +147,18 @@ bool readGpio(int index) {
 int claimGpioAsOutput(int label) {
   const int index = gpioIndexFromLabel(label);
   if (index < 0) return -1;
-  setGpioConfig(index, true, false);
-  // If the system is already up, make the pin an output right now; otherwise
-  // the next enable applies it.
-  if (gSystemEnabled) applyGpioPin(index);
+  if (gSystemEnabled) {
+    // Never flip a live pin's direction: if an external instrument drives
+    // the net, switching the level shifter to output would fight it.
+    if (!gpioEnabled[index] || gpioIsInput[index]) {
+      protocol::fault(
+          "GPIO %d is not configured as an output; set it up while the system is disabled",
+          label);
+      return -1;
+    }
+    return kGpios[index].teensyPin;
+  }
+  setGpioConfig(index, true, false);  // applied on the next enable
   return kGpios[index].teensyPin;
 }
 
@@ -276,7 +284,13 @@ void configure(bool activate) {
     pinModeFast(pins::kCameraTriggerReady, INPUT);
     pinModeFast(pins::kCameraReading, INPUT);
   } else {
-    // Safe state: everything high impedance first.
+    // Drive the fixed outputs low before tri-stating: a pulled-up downstream
+    // input must not keep seeing an asserted line after "disable".
+    for (int i = 0; i < 4; i++) {
+      digitalWriteFast(pins::kDigitalOut[i], LOW);
+      doPulseActive[i] = false;
+    }
+    // Safe state: everything high impedance.
     for (int i = 0; i < 42; i++) pinModeFast(i, INPUT);
   }
 
