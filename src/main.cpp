@@ -134,6 +134,10 @@ void cmdSetupGpio() {
   const bool enabled = argBool(1);
   const bool isInput = argBool(2);
   if (faultPending() || !requireDisabled()) return;
+  if (gMagnetAttached && enabled && (label == 29 || label == 30 || label == 5 || label == 6)) {
+    fault("GPIO29/30 carry the magnet board's enable/select lines while it is attached");
+    return;
+  }
   const int index = io::gpioIndexFromLabel(label);
   if (index < 0) return;
   io::setGpioConfig(index, enabled, isInput);
@@ -398,6 +402,9 @@ void cmdStopSignal() {
   signals::stop(index);
 }
 
+// Note: streaming a full 2000-sample buffer blocks the loop (and any running
+// signals) for the duration of the USB transfer — normally a few ms, but
+// unbounded if the host stops reading. Prefer reading stopped signals.
 void cmdReadSignal() {
   const int index = argInt(0);
   if (faultPending() || !signals::validIndex(index)) return;
@@ -529,7 +536,7 @@ void tickHeartbeat() {
 void setup() {
   Serial.begin(2000000);  // USB CDC: the rate is nominal
   leds::init();           // load calibration from EEPROM
-  system_::setEnabled(false);  // known safe state
+  system_::bootSafeState();
   protocol::logf("syncboard %s booted", kFirmwareVersion);
 }
 
@@ -544,10 +551,28 @@ void loop() {
     io::tickDoPulses();
   }
 
-  // Errors raised outside a request (e.g. from the signal engine) have no
-  // reply to ride on; surface them on the log channel instead.
+  // Errors raised outside a request (e.g. from the signal engine or a
+  // trigger edge) have no reply to ride on; surface them on the log channel.
+  // Repeats are throttled: a persistent condition (a misbehaving trigger, a
+  // fast signal with a bad target) would otherwise flood the link at the
+  // event rate and starve real traffic.
   if (protocol::faultPending()) {
-    protocol::logf("ERROR: %s", protocol::faultMessage());
+    static char lastError[256] = "";
+    static uint32_t lastErrorMs = 0;
+    static uint32_t suppressed = 0;
+    const uint32_t now = millis();
+    if (strcmp(protocol::faultMessage(), lastError) == 0 && now - lastErrorMs < 1000) {
+      suppressed++;
+    } else {
+      if (suppressed > 0) {
+        protocol::logf("ERROR: (last message repeated %lu more times)",
+                       (unsigned long)suppressed);
+        suppressed = 0;
+      }
+      protocol::logf("ERROR: %s", protocol::faultMessage());
+      strlcpy(lastError, protocol::faultMessage(), sizeof(lastError));
+      lastErrorMs = now;
+    }
     protocol::clearFault();
   }
 }

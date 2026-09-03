@@ -159,8 +159,10 @@ void addStr(const char* s) {
 }
 
 void endReply() {
+  // No Serial.flush(): the USB stack drains its buffers from an ISR, and
+  // blocking here would stall the main loop (and any running signals) for
+  // the whole transmission of a large reply.
   writeStr("\n");
-  Serial.flush();
 }
 
 void replyOk() {

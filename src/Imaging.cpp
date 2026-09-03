@@ -22,8 +22,7 @@ bool imgActive[kMaxImages] = {false};
 int imgLed[kMaxImages] = {0};
 uint32_t imgExposureUs[kMaxImages] = {0};
 
-bool running = false;
-int currentImage = -1;   // -1 = idle
+int currentImage = -1;   // -1 = idle; >= 0 means a sequence is in flight
 bool exposing = false;
 uint32_t exposureStartUs = 0;
 uint32_t sequenceStartUs = 0;
@@ -40,18 +39,19 @@ const int kTriggerPins[kNumTriggers] = {
     pins::kCameraLed[3], pins::kCameraLed[0]};
 int prevTriggerState[kNumTriggers];
 
+bool running() { return currentImage >= 0; }
+
 void setFrameLed(int image, bool on) {
   const int led = imgLed[image];
   if (led == 0) return;
   if (!gLedAttached) {
-    protocol::logf("ERROR: frame %d wants LED %d but no LED board is attached", image, led);
+    protocol::fault("frame %d wants LED %d but no LED board is attached", image, led);
     return;
   }
   leds::switchOn(led, on, /*force=*/true);
 }
 
 void endSequence() {
-  running = false;
   currentImage = -1;
   protocol::logf("image sequence finished in %lu us",
                  (unsigned long)(micros() - sequenceStartUs));
@@ -60,8 +60,7 @@ void endSequence() {
 // Starts exposing the next frame.
 void startImage() {
   if (exposing) {
-    protocol::logf("ERROR: new frame requested while still exposing; "
-                   "your timings/triggers overlap");
+    protocol::fault("new frame requested while still exposing; timings/triggers overlap");
     return;
   }
   currentImage++;
@@ -70,7 +69,7 @@ void startImage() {
 
   if (mode == 1) {
     if (!digitalReadFast(pins::kCameraTriggerReady)) {
-      protocol::logf("ERROR: camera triggered before it reported ready");
+      protocol::fault("camera triggered before it reported ready");
     }
     if (cameraTriggerHigh) {
       // Previous frame's pulse still high (very short frame): give the
@@ -90,7 +89,7 @@ void startImage() {
 void endImage() {
   setFrameLed(currentImage, false);
   if (!exposing) {
-    protocol::logf("ERROR: frame end requested while not exposing");
+    protocol::fault("frame end requested while not exposing");
     return;
   }
   exposing = false;
@@ -109,15 +108,15 @@ void finishImage() {
 
 // A camera per-LED gating edge arrived (only relevant with ledByCamera).
 void handleLedTrigger(int ledIndex, bool high) {
-  if (!ledByCamera || !running) return;
+  if (!ledByCamera || !running()) return;
   if (ledIndex != currentImage) {
-    protocol::logf("ERROR: camera gated frame %d but we are on frame %d; frames overlap",
-                   ledIndex, currentImage);
+    protocol::fault("camera gated frame %d but we are on frame %d; frames overlap",
+                    ledIndex, currentImage);
     return;
   }
   if (high) {
     if (!exposing) {
-      protocol::logf("ERROR: camera gated LED on before the frame started");
+      protocol::fault("camera gated LED on before the frame started");
       return;
     }
     setFrameLed(ledIndex, true);
@@ -127,11 +126,10 @@ void handleLedTrigger(int ledIndex, bool high) {
 }
 
 void beginSequence() {
-  if (currentImage != -1) {
-    protocol::logf("ERROR: sequence start requested while one is already running");
+  if (running()) {
+    protocol::fault("sequence start requested while one is already running");
     return;
   }
-  running = true;
   sequenceStartUs = micros();
   startImage();
 }
@@ -139,7 +137,7 @@ void beginSequence() {
 }  // namespace
 
 void setSyncMode(int newMode, bool newLedByCamera) {
-  if (running) {
+  if (running()) {
     protocol::fault("cannot change sync mode while a sequence is running");
     return;
   }
@@ -155,7 +153,7 @@ int syncMode() { return mode; }
 
 void setupSequence(const bool active[kMaxImages], const int led[kMaxImages],
                    const uint32_t exposureUs[kMaxImages]) {
-  if (running) {
+  if (running()) {
     protocol::fault("cannot change the image sequence while it is running");
     return;
   }
@@ -178,6 +176,12 @@ void setupSequence(const bool active[kMaxImages], const int led[kMaxImages],
     if (ledByCamera && exposureUs[i] > 0) {
       protocol::fault("frame %d has a fixed exposure time but LED gating is set to "
                       "camera control; set exposures to 0 or change the sync mode",
+                      i);
+      return;
+    }
+    if (!ledByCamera && active[i] && exposureUs[i] == 0) {
+      protocol::fault("frame %d has no exposure time; without camera-gated LEDs the "
+                      "frame would end instantly",
                       i);
       return;
     }
@@ -208,13 +212,19 @@ void startSequence(int expectedImages) {
     protocol::fault("host expects %d frames but %d are configured", expectedImages, numActive);
     return;
   }
+  for (int i = 0; i < numActive; i++) {
+    // Re-check here: the sync mode may have changed since setupSequence.
+    if (!ledByCamera && imgExposureUs[i] == 0) {
+      protocol::fault("frame %d has no exposure time; without camera-gated LEDs the "
+                      "frame would end instantly",
+                      i);
+      return;
+    }
+  }
   beginSequence();
 }
 
-bool sequenceRunning() { return running; }
-
 void hardReset() {
-  running = false;
   currentImage = -1;
   exposing = false;
   digitalWriteFast(pins::kCameraTriggerIn, LOW);
@@ -229,10 +239,13 @@ void tick() {
     cameraTriggerHigh = false;
   }
 
-  // Edge-detect the trigger inputs. The baseline is tracked even in sync
-  // mode 0, so switching modes does not turn an old level change into a
-  // spurious fresh edge.
-  for (int i = 0; i < kNumTriggers; i++) {
+  // Edge-detect the trigger inputs, scanned from the highest index down:
+  // in sync mode 2 the start line shares a pin with the frame-0 LED gate,
+  // and the sequence must begin (index 4) before that same rising edge is
+  // interpreted as the frame-0 gate (index 0). The baseline is tracked even
+  // in sync mode 0, so switching modes does not turn an old level change
+  // into a spurious fresh edge.
+  for (int i = kNumTriggers - 1; i >= 0; i--) {
     const int state = digitalReadFast(kTriggerPins[i]);
     if (state != prevTriggerState[i] && mode != 0) {
       if (i < 4) {
@@ -245,7 +258,7 @@ void tick() {
   }
   if (mode == 0) return;
 
-  if (!running || currentImage < 0) return;
+  if (!running()) return;
 
   // Timer-based exposure end (also overrides camera gating when a frame has
   // an explicit exposure time).
@@ -255,7 +268,7 @@ void tick() {
     }
   }
 
-  if (running && (uint32_t)(micros() - sequenceStartUs) > kSequenceTimeoutUs) {
+  if (running() && (uint32_t)(micros() - sequenceStartUs) > kSequenceTimeoutUs) {
     protocol::logf("ERROR: image sequence timed out; disabling the system as a precaution");
     system_::setEnabled(false);  // also hard-resets imaging and turns LEDs off
   }

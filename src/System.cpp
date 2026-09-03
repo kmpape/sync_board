@@ -15,16 +15,9 @@ bool gMagnetAttached = false;
 
 namespace system_ {
 
-void setEnabled(bool enable) {
-  if (enable) {
-    if (gSystemEnabled) return;  // reconfiguring a live system would glitch it
-    io::configure(true);
-    imaging::latchTriggerBaseline();
-    if (gLedAttached) leds::reset(true);
-    gSystemEnabled = true;
-    return;
-  }
+namespace {
 
+void teardownToSafeState() {
   // Stop all activity first so nothing re-drives an output mid-shutdown.
   signals::stopAll();
   imaging::hardReset();
@@ -36,6 +29,23 @@ void setEnabled(bool enable) {
   delay(1000);
   gSystemEnabled = false;
 }
+
+}  // namespace
+
+void setEnabled(bool enable) {
+  if (enable == gSystemEnabled) return;  // reconfiguring a live system would
+                                         // glitch it; re-disabling wastes ~2 s
+  if (enable) {
+    io::configure(true);
+    imaging::latchTriggerBaseline();
+    if (gLedAttached) leds::reset(true);
+    gSystemEnabled = true;
+  } else {
+    teardownToSafeState();
+  }
+}
+
+void bootSafeState() { teardownToSafeState(); }
 
 void resetConfig() {
   setEnabled(false);

@@ -46,4 +46,9 @@ void setSwitch(int channel, float duty);
 // operation; false puts all pins and expansion chips into a safe idle state.
 void configure(bool activate);
 
+// A few manual heartbeat edges (low, delayMs, high, delayMs, low) to keep
+// the expansion boards' liveness detectors happy while a long blocking
+// operation (calibration sweep, bring-up) stops the main-loop heartbeat.
+void heartbeatPulse(int delayMs);
+
 }  // namespace io

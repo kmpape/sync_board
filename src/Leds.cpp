@@ -3,6 +3,7 @@
 #include "Calibration.h"
 #include "Chips.h"
 #include "Io.h"
+#include "LinearFit.h"
 #include "Pins.h"
 #include "Protocol.h"
 #include "State.h"
@@ -30,7 +31,6 @@ float levelSet[kNumLeds] = {0.0f};
 
 uint32_t timedEndUs[kNumLeds] = {0};
 bool timedActive[kNumLeds] = {false};
-int numTimedActive = 0;
 
 bool validChannel(int channel) {
   if (channel < 1 || channel > kNumLeds) {
@@ -74,40 +74,12 @@ void switchRaw(int channel, bool on) {
   digitalWriteFast(pins::kLedEnable[channel - 1], on ? HIGH : LOW);
 }
 
-void cancelTimed(int channel) {
-  if (timedActive[channel - 1]) {
-    timedActive[channel - 1] = false;
-    numTimedActive--;
-  }
-}
+void cancelTimed(int channel) { timedActive[channel - 1] = false; }
 
 float avgAdcReads(int channel, bool current, int count) {
   float sum = 0.0f;
   for (int i = 0; i < count; i++) sum += readOutput(channel, current);
   return sum / (float)count;
-}
-
-// Least-squares fit y = slope*x + intercept over points [from, n).
-void linearFit(const float* x, const float* y, int from, int n,
-               float& slope, float& intercept) {
-  float sx = 0, sy = 0, sxx = 0, sxy = 0;
-  const int m = n - from;
-  for (int i = from; i < n; i++) {
-    sx += x[i];
-    sy += y[i];
-    sxx += x[i] * x[i];
-    sxy += x[i] * y[i];
-  }
-  slope = (m * sxy - sx * sy) / (m * sxx - sx * sx);
-  intercept = (sy - slope * sx) / m;
-}
-
-void heartbeatWiggle(int delayMs) {
-  digitalWriteFast(pins::kHeartbeat, LOW);
-  delay(delayMs);
-  digitalWriteFast(pins::kHeartbeat, HIGH);
-  delay(delayMs);
-  digitalWriteFast(pins::kHeartbeat, LOW);
 }
 
 }  // namespace
@@ -207,7 +179,6 @@ void switchTimed(int channel, float durationMs) {
   }
   timedActive[channel - 1] = true;
   timedEndUs[channel - 1] = startUs + durationUs;
-  numTimedActive++;
 }
 
 void allOff() {
@@ -215,7 +186,6 @@ void allOff() {
     digitalWriteFast(pins::kLedEnable[i], LOW);
     timedActive[i] = false;
   }
-  numTimedActive = 0;
 }
 
 void reset(bool hardwareActive) {
@@ -234,16 +204,12 @@ void reset(bool hardwareActive) {
   }
 }
 
-bool anyTimedActive() { return numTimedActive > 0; }
-
 void tick() {
-  if (numTimedActive == 0) return;
   const uint32_t now = micros();
   for (int i = 0; i < kNumLeds; i++) {
     if (timedActive[i] && (int32_t)(now - timedEndUs[i]) >= 0) {
       switchRaw(i + 1, false);
       timedActive[i] = false;
-      numTimedActive--;
     }
   }
 }
@@ -301,7 +267,7 @@ void calibrate(int channel, float maxCurrentA) {
     const float v = startV + (endV - startV) * i / (kNumPoints - 1);
     setRawVolts(channel, v);
     switchRaw(channel, true);
-    heartbeatWiggle(3);  // keeps expansion boards alive + settling time
+    io::heartbeatPulse(3);  // keeps expansion boards alive + settling time
     measCurrent[i] = avgAdcReads(channel, true, 20);
     measPower[i] = avgAdcReads(channel, false, 20);
     switchRaw(channel, false);
@@ -361,7 +327,7 @@ void calibrate(int channel, float maxCurrentA) {
     const float v = startV + (endV - startV) * i / (kNumPoints - 1);
     setRawVolts(channel, v);
     switchRaw(channel, true);
-    heartbeatWiggle(1);
+    io::heartbeatPulse(1);
     measCurrent[i] = avgAdcReads(channel, true, 10);
     measPower[i] = avgAdcReads(channel, false, 10);
     if (measPower[i] > measPowerMax) measPowerMax = measPower[i];

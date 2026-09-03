@@ -2,6 +2,7 @@
 
 #include "Chips.h"
 #include "Io.h"
+#include "LinearFit.h"
 #include "Pins.h"
 #include "Protocol.h"
 #include "State.h"
@@ -67,12 +68,8 @@ float readCurrentMonitor() {
 }
 
 void heartbeatWiggle() {
-  digitalWriteFast(pins::kHeartbeat, LOW);
-  delay(3);
-  digitalWriteFast(pins::kHeartbeat, HIGH);
-  delay(3);
-  digitalWriteFast(pins::kHeartbeat, LOW);
-  delay(3);
+  io::heartbeatPulse(3);
+  delay(3);  // extra settling time between calibration points
 }
 
 // Sweeps one output's DAC around the zero-current point and fits
@@ -95,15 +92,8 @@ bool calibrateOutput(int dacChannel, float& slope, float& interceptV) {
     i[p] /= (float)kCalAvg;
   }
 
-  float sx = 0, sy = 0, sxy = 0, sxx = 0;
-  for (int p = 0; p < kCalPoints; p++) {
-    sx += v[p];
-    sy += i[p];
-    sxy += v[p] * i[p];
-    sxx += v[p] * v[p];
-  }
-  slope = (kCalPoints * sxy - sx * sy) / (kCalPoints * sxx - sx * sx);
-  const float yIntercept = (sy - slope * sx) / kCalPoints;
+  float yIntercept;
+  linearFit(v, i, 0, kCalPoints, slope, yIntercept);
   interceptV = -yIntercept / slope;  // DAC volts at exactly 0 A
 
   if (interceptV <= 1.6f || interceptV >= 1.7f) {
@@ -221,15 +211,7 @@ void calibrateHall(int hallId) {
   setCurrent(true, 0.0f);  // park at zero before disabling
   enable(false);
 
-  float sx = 0, sy = 0, sxy = 0, sxx = 0;
-  for (int p = 0; p < kCalPoints; p++) {
-    sx += amps[p];
-    sy += mT[p];
-    sxy += amps[p] * mT[p];
-    sxx += amps[p] * amps[p];
-  }
-  hallSlope = (kCalPoints * sxy - sx * sy) / (kCalPoints * sxx - sx * sx);
-  hallIntercept = (sy - hallSlope * sx) / kCalPoints;
+  linearFit(amps, mT, 0, kCalPoints, hallSlope, hallIntercept);
   hallCalibrated = true;
   protocol::logf("hall calibration: %.4f mT/A, offset %.4f mT", (double)hallSlope,
                  (double)hallIntercept);

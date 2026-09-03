@@ -43,12 +43,19 @@ def test_signal_configure_sends_wire_values(board):
 
 
 def test_imaging_configure_pads_to_four_frames(board):
-    board.imaging.configure([Frame(led=5, exposure_ms=10), Frame(led=2)])
+    board.imaging.configure([Frame(led=5, exposure_ms=10), Frame(led=2, exposure_ms=5)])
     command, args = board._t.requests[-1]
     assert command == "setupImaging"
-    assert args == (True, 5, 10.0, True, 2, 0.0, False, 0, 0.0, False, 0, 0.0)
+    assert args == (True, 5, 10.0, True, 2, 5.0, False, 0, 0.0, False, 0, 0.0)
     board.imaging.start()
     assert board._t.requests[-1] == ("startImaging", (2,))
+
+
+def test_imaging_rejects_zero_exposure_without_camera_gating(board):
+    with pytest.raises(ValueError, match="exposure_ms"):
+        board.imaging.configure([Frame(led=5)])
+    board.imaging.set_sync_mode(1, led_by_camera=True)
+    board.imaging.configure([Frame(led=5)])  # now valid
 
 
 def test_imaging_start_requires_configure(board):

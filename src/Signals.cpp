@@ -28,6 +28,10 @@ struct Signal {
 
 Signal sigs[kNumSignals];
 
+// Delays above this would leave the wrap-safe uint32 micros() comparison in
+// tick(); 30 minutes stays well inside the window.
+constexpr float kMaxDelayMs = 30.0f * 60.0f * 1000.0f;
+
 bool isRecordingMode(Mode m) {
   return m == Mode::kAdc || m == Mode::kMagAdc || m == Mode::kMagHallRead;
 }
@@ -161,11 +165,39 @@ void configure(int index, Mode mode, uint32_t option, bool repeat, bool isSlave)
     protocol::fault("a conductor signal cannot itself be a slave");
     return;
   }
-  if (mode == Mode::kDo || mode == Mode::kDoTimed) {
-    if (option < 1 || option > 4) {
-      protocol::fault("digital output option %lu out of range 1..4", (unsigned long)option);
-      return;
-    }
+  bool optionOk = true;
+  switch (mode) {
+    case Mode::kDo:
+    case Mode::kDoTimed:
+      optionOk = option >= 1 && option <= 4;
+      break;
+    case Mode::kAdc:
+    case Mode::kMagAdc:
+    case Mode::kLed:
+    case Mode::kLedTimed:
+      optionOk = option >= 1 && option <= 8;
+      break;
+    case Mode::kDac:
+    case Mode::kMagDac:
+      optionOk = option <= 8;  // 0 = all channels
+      break;
+    case Mode::kMagHallRead:
+      optionOk = option <= 2;
+      break;
+    case Mode::kMagCurrent:
+    case Mode::kMagField:
+      optionOk = option <= 1;  // 1 = NC output, 0 = NO
+      break;
+    case Mode::kConductor:
+      optionOk = option > 0 && option < (1u << kNumSignals);
+      break;
+    default:
+      break;  // kGpioWrite validated by the claim below
+  }
+  if (!optionOk) {
+    protocol::fault("option %lu is invalid for signal mode %d", (unsigned long)option,
+                    (int)mode);
+    return;
   }
   if (mode == Mode::kGpioWrite) {
     s.gpioPin = io::claimGpioAsOutput((int)option);
@@ -201,6 +233,11 @@ void load(int index, int count, const float* values, const float* delaysMs) {
       continue;
     }
     const float delayMs = delaysMs[i];
+    if (delayMs > kMaxDelayMs) {
+      protocol::fault("signal %d step %d: delay %.0f ms exceeds the %d minute maximum",
+                      index, i, (double)delayMs, (int)(kMaxDelayMs / 60000.0f));
+      return;
+    }
     // Any negative delay is the end-of-sequence sentinel, stored as -1 us.
     const int32_t delayUs = (delayMs < 0.0f) ? -1 : (int32_t)(delayMs * 1000.0f);
     if (delayUs == 0 || (delayUs == -1 && i == 0)) {
@@ -234,7 +271,7 @@ void loadUniform(int index, int count, float intervalMs) {
   }
   s.count = 0;  // see load()
   const int32_t delayUs = (int32_t)(intervalMs * 1000.0f);
-  if (delayUs <= 0) {
+  if (delayUs <= 0 || intervalMs > kMaxDelayMs) {
     protocol::fault("interval %.3f ms is invalid", (double)intervalMs);
     return;
   }

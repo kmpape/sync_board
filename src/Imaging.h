@@ -31,8 +31,6 @@ void setupSequence(const bool active[kMaxImages], const int led[kMaxImages],
 // match the configured number of active frames.
 void startSequence(int expectedImages);
 
-bool sequenceRunning();
-
 // Aborts any sequence and forces camera trigger + state to idle. Does not
 // touch LEDs; callers turn those off through the LED driver.
 void hardReset();

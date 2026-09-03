@@ -348,7 +348,12 @@ class SignalApi:
 
     def read(self, index: int) -> list[float]:
         """Returns a signal's data buffer (recorded samples for ADC-type
-        modes). Safe to call while the signal is running."""
+        modes).
+
+        Reading while signals run works, but the transfer briefly stalls the
+        firmware's signal engine, leaving a small timing gap; prefer reading
+        after the signal has stopped.
+        """
         fields = self._t.request("readSignal", index, timeout=10.0)
         count = int(fields[0])
         return [float(f) for f in fields[1 : 1 + count]]
@@ -405,17 +410,24 @@ class ImagingApi:
     def __init__(self, transport: Transport):
         self._t = transport
         self._num_frames = 0
+        self._led_by_camera = False
 
     def set_sync_mode(self, mode: int, led_by_camera: bool = False) -> None:
         """mode: 0 = triggers ignored, 1 = host-started sequences,
         2 = externally triggered sequences. ``led_by_camera`` hands per-frame
         LED timing to the camera's gating outputs."""
         self._t.request("setSyncMode", mode, led_by_camera)
+        self._led_by_camera = led_by_camera
 
     def configure(self, frames: Sequence[Frame]) -> None:
         """Configures the sequence as a list of 1..4 frames."""
         if not 1 <= len(frames) <= self.MAX_FRAMES:
             raise ValueError(f"need 1..{self.MAX_FRAMES} frames")
+        if not self._led_by_camera and any(f.exposure_ms <= 0 for f in frames):
+            raise ValueError(
+                "every frame needs a positive exposure_ms unless the sync mode "
+                "was set with led_by_camera=True"
+            )
         args: list = []
         for i in range(self.MAX_FRAMES):
             frame = frames[i] if i < len(frames) else None

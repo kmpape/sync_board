@@ -37,7 +37,6 @@ void reset(bool hardwareActive);
 
 // Turns any expired timed LEDs off; call every loop iteration.
 void tick();
-bool anyTimedActive();
 
 // Measures a channel: result[0] = current in A, result[1] = optical power
 // monitor in mV. Averaged over many ADC reads, so takes tens of ms.

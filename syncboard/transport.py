@@ -102,8 +102,8 @@ class Transport:
                         f"(the board may still have executed it)"
                     )
                 message = self._parse(line)
-                if message is None or message.tag != tag:
-                    continue  # log line, or stale reply from a timed-out request
+                if message is None:
+                    continue  # log line, non-protocol noise, or stale reply
                 if message.kind == "err":
                     raise CommandError(command, message.fields[0])
                 return message.fields
@@ -111,8 +111,14 @@ class Transport:
     # -- internals ----------------------------------------------------------
 
     def _parse(self, line: str) -> Message | None:
-        """Parses a line; handles log lines and stale replies internally."""
-        message = parse_line(line)
+        """Parses one line, absorbing everything that is not the current
+        request's reply: log lines, stale replies from timed-out requests,
+        and non-protocol noise (all logged, never raised)."""
+        try:
+            message = parse_line(line)
+        except ProtocolError:
+            logger.warning("discarding non-protocol input: %r", line)
+            return None
         if message.kind == "log":
             text = message.fields[0]
             if text.startswith("ERROR"):
@@ -127,14 +133,21 @@ class Transport:
             return None
         return message
 
+    def _pop_line(self) -> str | None:
+        """Removes and returns the next complete line in the buffer, if any."""
+        newline = self._rx.find(b"\n")
+        if newline == -1:
+            return None
+        raw = self._rx[:newline]
+        del self._rx[: newline + 1]
+        return raw.rstrip(b"\r").decode("ascii", errors="replace")
+
     def _read_line(self, deadline: float) -> str | None:
         """Returns the next complete line, or None once ``deadline`` passes."""
         while True:
-            newline = self._rx.find(b"\n")
-            if newline != -1:
-                raw = self._rx[:newline]
-                del self._rx[: newline + 1]
-                return raw.rstrip(b"\r").decode("ascii", errors="replace")
+            line = self._pop_line()
+            if line is not None:
+                return line
             if time.monotonic() >= deadline:
                 return None
             waiting = self._serial.in_waiting
@@ -145,12 +158,6 @@ class Transport:
         waiting = self._serial.in_waiting
         if waiting:
             self._rx.extend(self._serial.read(waiting))
-        while (newline := self._rx.find(b"\n")) != -1:
-            raw = self._rx[:newline]
-            del self._rx[: newline + 1]
-            line = raw.rstrip(b"\r").decode("ascii", errors="replace")
+        while (line := self._pop_line()) is not None:
             if line:
-                try:
-                    self._parse(line)
-                except ProtocolError:
-                    logger.warning("discarding non-protocol input: %r", line)
+                self._parse(line)

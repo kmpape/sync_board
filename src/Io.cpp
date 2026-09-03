@@ -34,10 +34,12 @@ uint32_t doPulseEndUs[4] = {0};
 bool doPulseActive[4] = {false};
 
 // Applies one GPIO's stored config to the pin and its level shifter.
-void applyGpioPin(int index) {
+// forceDisabled applies the disabled state while leaving the stored config
+// untouched (used by the system-disable path).
+void applyGpioPin(int index, bool forceDisabled = false) {
   const GpioInfo& g = kGpios[index];
   const int dirCh = g.levelShiftDirCh;
-  if (!gpioEnabled[index]) {
+  if (!gpioEnabled[index] || forceDisabled) {
     pinModeFast(g.teensyPin, INPUT);  // high impedance
     if (dirCh > 0) {
       chips::pca9685SetDuty(chips::kSyncPwmLevelShiftAddr, dirCh + 1, 0.0f);  // shifter off
@@ -86,9 +88,9 @@ void turnChipsOff() {
   }
 }
 
-void heartbeatWiggle(int delayMs) {
-  // A few manual heartbeat edges keep the expansion boards' liveness
-  // detectors happy while the main loop (and its heartbeat timer) is blocked.
+}  // namespace
+
+void heartbeatPulse(int delayMs) {
   pinModeFast(pins::kHeartbeat, OUTPUT);
   digitalWriteFast(pins::kHeartbeat, LOW);
   delay(delayMs);
@@ -96,8 +98,6 @@ void heartbeatWiggle(int delayMs) {
   delay(delayMs);
   digitalWriteFast(pins::kHeartbeat, LOW);
 }
-
-}  // namespace
 
 int gpioIndexFromLabel(int label) {
   if (label >= 0 && label < kNumGpios) return label;  // already an index
@@ -271,7 +271,7 @@ void setSwitch(int channel, float duty) {
 }
 
 void configure(bool activate) {
-  heartbeatWiggle(1);
+  heartbeatPulse(1);
 
   if (activate) {
     for (int i = 0; i < 4; i++) {
@@ -312,18 +312,11 @@ void configure(bool activate) {
   bulkShiftersEnabled = false;  // matches what turnChipsOff() writes
   turnChipsOff();
 
-  if (activate) {
-    for (int i = 0; i < kNumGpios; i++) applyGpioPin(i);
-  } else {
-    for (int i = 0; i < kNumGpios; i++) {
-      const bool enabledBefore = gpioEnabled[i];
-      gpioEnabled[i] = false;
-      applyGpioPin(i);
-      gpioEnabled[i] = enabledBefore;
-    }
+  for (int i = 0; i < kNumGpios; i++) {
+    applyGpioPin(i, /*forceDisabled=*/!activate);
   }
 
-  heartbeatWiggle(3);
+  heartbeatPulse(3);
 
   // Pins that must not float regardless of mode.
   for (int i = 0; i < 8; i++) {

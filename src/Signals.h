@@ -35,9 +35,14 @@ enum class Mode : uint8_t {
 // Configures a signal (must be inactive). Faults on invalid input.
 void configure(int index, Mode mode, uint32_t option, bool repeat, bool isSlave);
 
-// Loads the step table: count pairs of (value, delayMs). A delay of -1 ends
-// the sequence early; delays are ignored for slave signals. For recording
-// modes values are ignored. Must be inactive.
+// Loads the step table: count pairs of (value, delayMs). A negative delay
+// ends the sequence early; delays are ignored for slave signals. For
+// recording modes values are ignored. Must be inactive.
+//
+// Note for repeating recording signals: once the buffer first wraps, further
+// samples are all spaced by the delay of the LAST step (the buffer rolls,
+// the delay table does not). Use loadUniform for recording unless that is
+// what you want.
 void load(int index, int count, const float* values, const float* delaysMs);
 
 // Convenience for recording modes: count samples at a fixed interval.
