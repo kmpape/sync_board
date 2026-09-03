@@ -198,6 +198,7 @@ class Checkout:
 
     def section_magnet(self) -> None:
         self.banner("Magnet board")
+        # Rerun setup in case an earlier section power-cycled the system.
         self.board.magnet.setup()
         self.auto("magnet chips detected", True)
         for hall_id in range(3):
@@ -266,9 +267,8 @@ def main() -> int:
     board = SyncBoard.connect(args.port)
     checkout = Checkout(board)
     try:
-        board.attach_led_board("led" in sections)
-        board.attach_magnet_board("magnet" in sections)
-        board.enable()
+        board.initialise(led_board="led" in sections,
+                         magnet_board="magnet" in sections)
         for name in sections:
             if name == "led":
                 checkout.section_led(args.led)

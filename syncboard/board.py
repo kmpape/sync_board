@@ -136,7 +136,9 @@ class SyncBoard:
 
     def initialise(self, led_board: bool = False, magnet_board: bool = False) -> None:
         """Convenience bring-up: declare attached boards, enable the system,
-        and set up the magnet board if present."""
+        and set up the magnet board if present. Safe to call regardless of
+        the board's current state."""
+        self.disable()  # board attachment requires a disabled system
         self.attach_led_board(led_board)
         self.attach_magnet_board(magnet_board)
         self.enable()
@@ -230,7 +232,8 @@ class MagnetApi:
         self._t = transport
 
     def setup(self) -> None:
-        """Probes the board's chips and powers its DAC (run after enable)."""
+        """Probes the board's chips and powers its DAC. Must be re-run after
+        every system enable (``SyncBoard.initialise`` does this for you)."""
         self._t.request("setupMagnet")
 
     def enable(self, on: bool = True) -> None:

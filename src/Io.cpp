@@ -148,6 +148,9 @@ int claimGpioAsOutput(int label) {
   const int index = gpioIndexFromLabel(label);
   if (index < 0) return -1;
   setGpioConfig(index, true, false);
+  // If the system is already up, make the pin an output right now; otherwise
+  // the next enable applies it.
+  if (gSystemEnabled) applyGpioPin(index);
   return kGpios[index].teensyPin;
 }
 
@@ -176,8 +179,10 @@ void writeDigitalOut(int channel, bool high) {
 void pulseDigitalOut(int channel, float durationMs) {
   const int pin = digitalOutPin(channel);
   if (pin < 0) return;
-  if (durationMs <= 0.0f) {
-    protocol::fault("pulse duration must be positive");
+  // The 60 s cap keeps the end-time comparison safely inside the 32-bit
+  // micros() wrap window; pulses are for triggering, not slow control.
+  if (durationMs <= 0.0f || durationMs > 60000.0f) {
+    protocol::fault("pulse duration %.1f ms out of range (0, 60000]", (double)durationMs);
     return;
   }
   if (doPulseActive[channel - 1]) {

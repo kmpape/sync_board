@@ -5,6 +5,7 @@
 #include "Imaging.h"
 #include "Io.h"
 #include "Leds.h"
+#include "Magnet.h"
 #include "Signals.h"
 #include "State.h"
 
@@ -16,6 +17,7 @@ namespace system_ {
 
 void setEnabled(bool enable) {
   if (enable) {
+    if (gSystemEnabled) return;  // reconfiguring a live system would glitch it
     io::configure(true);
     imaging::latchTriggerBaseline();
     if (gLedAttached) leds::reset(true);
@@ -29,6 +31,7 @@ void setEnabled(bool enable) {
   leds::allOff();
   io::configure(false);
   leds::reset(false);
+  magnet::invalidateSetup();  // its control pins were just torn down
   // Let attached boards notice the heartbeat has stopped and power down.
   delay(1000);
   gSystemEnabled = false;

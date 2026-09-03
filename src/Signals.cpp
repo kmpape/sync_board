@@ -54,7 +54,7 @@ void stopAndRewind(int index) {
 
 void step(int index);
 
-void performAction(Signal& s, int idx) {
+void performAction(int selfIndex, Signal& s, int idx) {
   const float value = s.data[idx];
   switch (s.mode) {
     case Mode::kAdc:
@@ -95,6 +95,7 @@ void performAction(Signal& s, int idx) {
       break;
     case Mode::kConductor:
       for (int i = 0; i < kNumSignals; i++) {
+        if (i == selfIndex) continue;  // a conductor must never drive itself
         if ((s.option & (1u << i)) && sigs[i].active && sigs[i].isSlave) {
           step(i);
         }
@@ -113,7 +114,7 @@ void step(int index) {
 
   int idx = s.pos + 1;
   if (idx >= s.count || s.delayUs[idx] == -1) {
-    if (s.repeat) {
+    if (s.repeat && idx > 1) {
       if (isRecordingMode(s.mode)) {
         // Rolling record: drop the oldest sample, append at the end.
         memmove(&s.data[0], &s.data[1], (idx - 1) * sizeof(float));
@@ -121,13 +122,15 @@ void step(int index) {
       } else {
         idx = 0;  // replay the sequence
       }
+    } else if (s.repeat && idx == 1) {
+      idx = 0;  // single-step repeat: no rolling needed
     } else {
       stopAndRewind(index);
       return;
     }
   }
 
-  performAction(s, idx);
+  performAction(index, s, idx);
   s.intervalUs = (uint32_t)s.delayUs[idx];
   s.pos = idx;
 }
@@ -189,7 +192,7 @@ void load(int index, int count, const float* values, const float* delaysMs) {
     }
     const float delayMs = delaysMs[i];
     const int32_t delayUs = (int32_t)(delayMs * 1000.0f);
-    if (delayUs <= 0 && delayUs != -1) {
+    if ((delayUs <= 0 && delayUs != -1) || (delayUs == -1 && i == 0)) {
       protocol::fault("signal %d step %d: delay %.3f ms is invalid (must be positive, or -1 to end)",
                       index, i, (double)delayMs);
       return;

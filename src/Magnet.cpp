@@ -58,10 +58,11 @@ void setDac(int channel, float volts) {
 // Relay closed connects the coil to the current driver.
 void switchRelay(bool closed) { setDac(kDacRelayCh, closed ? 0.0f : 3.3f); }
 
-float readCurrentAmps() {
-  // The monitor is centred on the zero-current voltage; slope folded into
-  // the per-output calibration, so this is in "volts of imbalance" until
-  // divided by the fitted slope.
+// Current monitor reading relative to its zero-current reference. Units are
+// "monitor volts", not amps: the setCurrent() setpoint scale is defined by
+// this same reading, so the two cancel and only the Hall calibration ties
+// anything to physical units.
+float readCurrentMonitor() {
   return readAdcVolts(kAdcCurrentCh) - zeroCurrentV;
 }
 
@@ -90,7 +91,7 @@ bool calibrateOutput(int dacChannel, float& slope, float& interceptV) {
     setDac(dacChannel, v[p]);
     heartbeatWiggle();
     i[p] = 0.0f;
-    for (int a = 0; a < kCalAvg; a++) i[p] += readCurrentAmps();
+    for (int a = 0; a < kCalAvg; a++) i[p] += readCurrentMonitor();
     i[p] /= (float)kCalAvg;
   }
 
@@ -139,6 +140,8 @@ void setup() {
   chips::ad5669Setup(chips::kMagDacAddr, true);
   chipsReady = true;
 }
+
+void invalidateSetup() { chipsReady = false; }
 
 void enable(bool on) {
   if (!requireReady()) return;

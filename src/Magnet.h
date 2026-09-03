@@ -14,7 +14,12 @@ namespace magnet {
 
 // After system enable: probes the board's chips, powers up its DAC and
 // claims the two GPIO control lines. Faults if a chip is missing.
+// Must be re-run after every system enable (disable invalidates it).
 void setup();
+
+// Called by System on disable: the control pins and DAC are torn down, so
+// setup() must run again before the board is usable.
+void invalidateSetup();
 
 void enable(bool on);
 

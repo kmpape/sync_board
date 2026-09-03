@@ -163,8 +163,10 @@ void switchOn(int channel, bool on, bool force) {
 
 void switchTimed(int channel, float durationMs) {
   if (!validChannel(channel)) return;
-  if (durationMs <= 0.0f || durationMs > 3600.0f * 1000.0f) {
-    protocol::fault("LED on-time %.1f ms out of range", (double)durationMs);
+  // The 30 min cap keeps the end-time comparison safely inside the 32-bit
+  // micros() wrap window.
+  if (durationMs <= 0.0f || durationMs > 30.0f * 60.0f * 1000.0f) {
+    protocol::fault("LED on-time %.1f ms out of range (0, 30 min]", (double)durationMs);
     return;
   }
   if (timedActive[channel - 1]) {
