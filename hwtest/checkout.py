@@ -264,7 +264,12 @@ def main() -> int:
         parser.error("the led section needs --led CH to pick a safe channel")
 
     print("Connecting...")
-    board = SyncBoard.connect(args.port)
+    try:
+        board = SyncBoard.connect(args.port)
+    except SyncBoardError as exc:
+        print(f"Could not connect: {exc}")
+        print("Is the board plugged in and flashed with firmware v2?")
+        return 2
     checkout = Checkout(board)
     try:
         board.initialise(led_board="led" in sections,
