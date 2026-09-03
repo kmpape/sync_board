@@ -57,6 +57,24 @@ class Transport:
     def close(self) -> None:
         self._serial.close()
 
+    def reconnect(self, port: str | None = None) -> None:
+        """Reopens the connection, rediscovering the port by USB id.
+
+        Useful when the board re-enumerates (e.g. after a power glitch) and
+        reappears on a different device path. Board state is unknown after a
+        reconnect; callers should re-run their bring-up.
+        """
+        with self._lock:
+            try:
+                self._serial.close()
+            except Exception:
+                pass
+            self.port = port if port is not None else find_port()
+            self._serial = serial.Serial(port=self.port, baudrate=self._serial.baudrate,
+                                         timeout=0.05)
+            self._rx.clear()
+            logger.info("reconnected on %s", self.port)
+
     def __enter__(self) -> "Transport":
         return self
 

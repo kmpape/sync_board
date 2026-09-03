@@ -116,6 +116,13 @@ class SyncBoard:
         finally:
             self._t.close()
 
+    def reconnect(self) -> None:
+        """Reopens the serial connection, rediscovering the port by USB id
+        (the board sometimes re-enumerates on a different path). The board's
+        state is unknown afterwards; re-run :meth:`initialise`."""
+        self._t.reconnect()
+        self.ping()
+
     # -- system --------------------------------------------------------------
 
     def ping(self) -> str:

@@ -191,9 +191,11 @@ void load(int index, int count, const float* values, const float* delaysMs) {
       continue;
     }
     const float delayMs = delaysMs[i];
-    const int32_t delayUs = (int32_t)(delayMs * 1000.0f);
-    if ((delayUs <= 0 && delayUs != -1) || (delayUs == -1 && i == 0)) {
-      protocol::fault("signal %d step %d: delay %.3f ms is invalid (must be positive, or -1 to end)",
+    // Any negative delay is the end-of-sequence sentinel, stored as -1 us.
+    const int32_t delayUs = (delayMs < 0.0f) ? -1 : (int32_t)(delayMs * 1000.0f);
+    if (delayUs == 0 || (delayUs == -1 && i == 0)) {
+      protocol::fault("signal %d step %d: delay %.3f ms is invalid (must be positive, "
+                      "or negative to end the sequence)",
                       index, i, (double)delayMs);
       return;
     }
