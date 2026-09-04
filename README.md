@@ -235,9 +235,10 @@ For a freshly soldered board, work up to the full checkout in stages:
    - `di` — digital inputs 1–4 (5 V logic); jumper D_OUT_1 to each D_IN when
      asked — the script toggles D_OUT_1 and verifies both states itself.
    - `dac` — SPI path + AD5668; voltmeter on each channel's DAC_n SMA
-     connector (channels 1–4 need their J1 routing jumper in the S position).
+     connector. The script first asks to set the DAC SMA routing jumpers
+     S1-16..S1-19 to the S position (pins 1-2).
    - `adc` — ADS7828; apply a known voltage (e.g. the 3V3 rail) to the
-     ADC_1 SMA, then GND.
+     ADC_1 SMA, then GND (channels 1–4 need their S/E routing jumper in S).
    - `gpio` — level shifters + their PWM control channels; needs a jumper
      from GPIO25 to D_IN_1 (loopback, verified automatically).
    - `switches` — 12 V switch path; voltmeter on switch outputs 1 and 16.

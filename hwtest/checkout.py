@@ -123,10 +123,10 @@ class Checkout:
 
     def section_dac(self) -> None:
         self.banner("DAC outputs (AD5668, channels 1-8)")
-        print("  Probe each channel's labelled DAC_n SMA connector (centre pin vs")
-        print("  shield). Channels 1-4 additionally route through J1 S/E jumpers:")
-        print("  their jumper must be in the S (SMA) position, otherwise the")
-        print("  signal goes to the expansion headers instead.")
+        print("  Probe each channel's labelled DAC_n SMA connector (centre pin")
+        print("  vs shield).")
+        self.instruct("Put jumpers S1-16 through S1-19 (the DAC SMA routing "
+                      "jumpers) into the S position (pins 1-2)")
         # Channel 1 gets a three-point sweep (checks the DAC + reference);
         # the rest get a single mid-scale check (checks each output's path).
         for volts in (0.5, 1.65, 3.0):
@@ -140,8 +140,8 @@ class Checkout:
 
     def section_adc(self) -> None:
         self.banner("ADC inputs (ADS7828, channels 1-8)")
-        print("  Feed each channel via its labelled ADC_n SMA connector. Channels")
-        print("  1-4 need their J1 S/E routing jumper in the S position.")
+        print("  Feed each channel via its labelled ADC_n SMA connector (channels")
+        print("  1-4 need their S/E routing jumper in the S position).")
         self.instruct("Apply a known voltage (e.g. 3.3 V rail) to ADC channel 1")
         value = self.board.io.read_adc(1)
         print(f"  ADC1 reads {value:.3f} V")
