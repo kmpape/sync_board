@@ -115,6 +115,26 @@ Errors reported by the firmware raise `syncboard.CommandError` with the
 firmware's explanation. Asynchronous firmware output (warnings from the
 signal engine, calibration notes) is emitted on the `"syncboard"` logger.
 
+**Enable logging to see firmware messages.** Without logging configured,
+Python prints firmware WARNINGs/ERRORs bare to stderr and silently drops
+INFO-level output — which is where the useful detail lives (calibration
+slopes, sequence timings, the boot banner). Put this at the top of your
+script:
+
+```python
+import logging
+logging.basicConfig(level=logging.INFO)
+```
+
+or, to see only the SyncBoard's messages without turning on INFO globally:
+
+```python
+log = logging.getLogger("syncboard")
+log.setLevel(logging.INFO)
+log.addHandler(logging.StreamHandler())
+```
+
+
 Leaving the `with` block disables the system (all outputs safe) and closes
 the port; pass `sb.close(disable=False)` to skip that.
 
