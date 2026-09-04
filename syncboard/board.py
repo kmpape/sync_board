@@ -71,6 +71,15 @@ class LedSetup:
 
 
 @dataclass(frozen=True)
+class CameraInputs:
+    """Raw state of the camera interface input lines."""
+
+    trigger_ready: bool
+    reading: bool
+    led: tuple[bool, bool, bool, bool]  # per-frame LED gating lines 1..4
+
+
+@dataclass(frozen=True)
 class Frame:
     """One frame of an image sequence.
 
@@ -488,6 +497,16 @@ class ImagingApi:
     def is_running(self) -> bool:
         """True while an image sequence is in flight."""
         return self._t.request("activity")[1] == "1"
+
+    def read_camera_inputs(self) -> CameraInputs:
+        """Reads the camera interface lines directly — for bring-up checks
+        and debugging camera integration ('is the camera asserting ready?')."""
+        fields = self._t.request("readCameraInputs")
+        return CameraInputs(
+            trigger_ready=fields[0] == "1",
+            reading=fields[1] == "1",
+            led=tuple(f == "1" for f in fields[2:6]),  # type: ignore[arg-type]
+        )
 
     def wait(self, timeout: float | None = None,
              poll_interval_s: float = 0.01) -> None:

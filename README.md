@@ -106,6 +106,7 @@ one. Channels: DO/DI 1–4, ADC/DAC/LED 1–8 (DAC 0 = all), GPIO by label
 | `loadSignalUniform` | index, n, intervalMs | — |
 | `startSignal` / `stopSignal` | index | — |
 | `readSignal` | index | n, values… |
+| `readCameraInputs` | — | trigger-ready, reading, led1..4 (0/1 each) |
 | `setSyncMode` | mode 0–2, ledByCamera | — |
 | `setupImaging` | 4 × (active, led, exposureMs) | — |
 | `startImaging` | numFrames | — (sanity-checked against config) |
@@ -257,8 +258,9 @@ For a freshly soldered board, work up to the full checkout in stages:
    board 0x4A/0x54. Calibrate a LED channel first with a dummy load (a
    power resistor), not an expensive LED — calibration sweeps to the
    current limit you give it. Magnet calibration drives real coil current.
-6. Finally, with the camera wired: `--sections imaging` with a scope on the
-   trigger line.
+6. `--sections imaging` verifies the six camera input lines (driven from
+   D_OUT_1 via jumper) and, with a scope on the trigger line, the camera
+   trigger pulse. Repeat with the real camera wired when integrating.
 
 ## Migrating from v1 (pre-rewrite)
 

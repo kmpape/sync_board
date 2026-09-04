@@ -3,6 +3,7 @@
 import logging
 
 from syncboard.board import (
+    CameraInputs,
     FeedbackMode,
     Frame,
     LedMeasurement,
@@ -26,6 +27,7 @@ __all__ = [
     "SignalMode",
     "FeedbackMode",
     "Frame",
+    "CameraInputs",
     "Status",
     "LedMeasurement",
     "LedSetup",

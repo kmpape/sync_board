@@ -206,6 +206,20 @@ class Checkout:
                          f"{ainPoint[gpio]} reads ~3.3 V? (no level shifter on this pin)")
             self.board.io.write_gpio(gpio, False)
 
+        # Input direction: flip one shifted GPIO to input and drive it from
+        # D_OUT_1, proving the shifter direction-reversal machinery. (5 V is
+        # safe through the shifter; NEVER drive 5 V into GPIO29/30 directly -
+        # those are unshifted and the Teensy is not 5 V tolerant.)
+        self.board.disable()
+        self.board.io.setup_gpio(25, direction="input")
+        self.board.enable()
+        self.instruct("Jumper D_OUT_1 to GPIO25")
+        self.board.io.write_do(1, True)
+        high = self.board.io.read_gpio(25)
+        self.board.io.write_do(1, False)
+        low = self.board.io.read_gpio(25)
+        self.auto("GPIO25 reads as input", high and not low, f"high={high}, low={low}")
+
         # Leave everything as it was: disabled, high-impedance inputs.
         self.board.disable()
         for gpio in shifted + direct_ok:
@@ -261,6 +275,17 @@ class Checkout:
               f"{[f'{v:.3f}' for v in data[:5]]}")
         self.auto("signal ADC record", len(data) == 200)
 
+        # Protocol stress: the largest possible upload (~50 kB line) and
+        # readback, exercising the firmware's line buffer on the real link.
+        print("  Uploading a full-length 2000-step signal and reading it back...")
+        values = [(i % 331) / 100.0 for i in range(2000)]
+        self.board.signals.configure(0, SignalMode.DAC, option=1)
+        self.board.signals.load(0, values, [1.0] * 2000)
+        data = self.board.signals.read(0)
+        ok = (len(data) == 2000
+              and max(abs(a - b) for a, b in zip(data, values)) < 1e-4)
+        self.auto("2000-step upload/readback", ok, f"{len(data)} steps")
+
     def section_led(self, channel: int) -> None:
         self.banner(f"LED board (channel {channel})")
         answer = input("  Run LED calibration first? Needed once per LED. [y/N]: ")
@@ -310,7 +335,25 @@ class Checkout:
             self.board.magnet.enable(False)
 
     def section_imaging(self) -> None:
-        self.banner("Imaging (camera trigger)")
+        self.banner("Imaging (camera interface)")
+        # Camera inputs first: drive each from D_OUT_1 (they sit behind 5 V
+        # level shifters) and read them back over the protocol.
+        camera_inputs = [
+            ("camera trigger-ready (Tr0)", lambda ci: ci.trigger_ready),
+            ("camera reading (RO)", lambda ci: ci.reading),
+            ("camera LED1 gate", lambda ci: ci.led[0]),
+            ("camera LED2 gate", lambda ci: ci.led[1]),
+            ("camera LED3 gate", lambda ci: ci.led[2]),
+            ("camera LED4 gate", lambda ci: ci.led[3]),
+        ]
+        for name, getter in camera_inputs:
+            self.instruct(f"Jumper D_OUT_1 to the {name} input")
+            self.board.io.write_do(1, True)
+            high = getter(self.board.imaging.read_camera_inputs())
+            self.board.io.write_do(1, False)
+            low = getter(self.board.imaging.read_camera_inputs())
+            self.auto(name, high and not low, f"high={high}, low={low}")
+
         self.board.imaging.set_sync_mode(1)
         self.board.imaging.configure([Frame(exposure_ms=100)])
         print("  Starting a 1-frame sequence (camera trigger pin 32, TrI)...")
