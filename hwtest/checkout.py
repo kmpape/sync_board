@@ -203,12 +203,20 @@ class Checkout:
         self.board.enable()
 
     def section_switches(self) -> None:
-        self.banner("12 V power switches (channels 1-16)")
-        for ch in (1, 16):
+        self.banner("12 V power switches (low-side drivers, channels 1-16)")
+        print("  Channel n is net Po<n-1> on the power-switch headers. These are")
+        print("  LOW-SIDE switches: a load connects between +12 V and the Po pin,")
+        print("  and 'on' sinks the pin to GND. With no load attached, expect:")
+        print("    on  -> ~0 V at the pin (hard low)")
+        print("    off -> floating, drifting high (open-load diagnostic current)")
+        # One channel per driver chip (S1..S4 handle 4 channels each), plus
+        # channel 16 to cover the last PWM register.
+        for ch in (1, 5, 9, 13, 16):
+            net = f"Po{ch - 1}"
             self.board.io.set_switch(ch, 1.0)
-            self.confirm(f"switch {ch} on", f"Switch output {ch} reads ~12 V?")
+            self.confirm(f"switch {ch} on", f"{net} reads ~0 V (pulled to GND)?")
             self.board.io.set_switch(ch, 0.0)
-            self.confirm(f"switch {ch} off", f"Switch output {ch} reads ~0 V?")
+            self.confirm(f"switch {ch} off", f"{net} no longer pulled low?")
 
     def section_signals(self) -> None:
         self.banner("Signal engine")

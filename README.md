@@ -245,7 +245,10 @@ For a freshly soldered board, work up to the full checkout in stages:
      3.3 V voltmeter check. GPIO29–32 surface on the Ain0/Ain1 and
      PWM0/PWM1 connectors via jumpers J1-20..J1-23 (other position:
      expansion headers) — the script walks through this.
-   - `switches` — 12 V switch path; voltmeter on switch outputs 1 and 16.
+   - `switches` — 12 V switch path. The switches are **low-side** drivers:
+     channel n sinks net Po(n−1) (on the power-switch headers) to GND when
+     on; loads connect between +12 V and the Po pin. Voltmeter on the Po
+     pins; ~0 V means on.
    - `signals` — the timing engine; scope a 100 Hz square wave on DAC 1 and
      a 20 Hz conductor/slave train on D_OUT_1, plus an automatic ADC
      recording check.
