@@ -242,7 +242,9 @@ For a freshly soldered board, work up to the full checkout in stages:
    - `gpio` — all nine GPIOs. The seven level-shifted ones (13, 25–28,
      31, 32) loop back into D_IN_1 one at a time (jumper when asked,
      level-select jumpers set to 5 V); GPIO29/30 have no shifter and get a
-     3.3 V voltmeter check.
+     3.3 V voltmeter check. GPIO29–32 surface on the Ain0/Ain1 and
+     PWM0/PWM1 connectors via jumpers J1-20..J1-23 (other position:
+     expansion headers) — the script walks through this.
    - `switches` — 12 V switch path; voltmeter on switch outputs 1 and 16.
    - `signals` — the timing engine; scope a 100 Hz square wave on DAC 1 and
      a 20 Hz conductor/slave train on D_OUT_1, plus an automatic ADC

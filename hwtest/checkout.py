@@ -172,20 +172,28 @@ class Checkout:
 
         print("  Level-shifted GPIOs loop back into D_IN_1. Set each GPIO's")
         print("  level-select jumper to 5 V, or the input may not register.")
-        self.instruct("Set jumpers J1-20..J1-23 toward the GPIO connector "
-                      "(they otherwise route GPIO29-32 to the expansion headers)")
+        # Per the schematic, GPIO29-32 surface on other connectors:
+        #   J1-20: GPIO29 -> Ain0    J1-22: GPIO31 -> PWM0
+        #   J1-21: GPIO30 -> Ain1    J1-23: GPIO32 -> PWM1
+        # (the other jumper position routes them to the expansion headers).
+        self.instruct("Set J1-20/J1-21 toward Ain0/Ain1 and J1-22/J1-23 toward "
+                      "PWM0/PWM1 (not the expansion side)")
+        probePoint = {31: "the PWM0 connector (= GPIO31 via J1-22)",
+                      32: "the PWM1 connector (= GPIO32 via J1-23)"}
         for gpio in shifted:
-            self.instruct(f"Jumper GPIO{gpio} to D_IN_1")
+            self.instruct(f"Jumper {probePoint.get(gpio, f'GPIO{gpio}')} to D_IN_1")
             self.board.io.write_gpio(gpio, True)
             high = self.board.io.read_di(1)
             self.board.io.write_gpio(gpio, False)
             low = self.board.io.read_di(1)
             self.auto(f"GPIO{gpio} drives D_IN_1", high and not low,
                       f"high={high}, low={low}")
+        ainPoint = {29: "the Ain0 connector (= GPIO29 via J1-20)",
+                    30: "the Ain1 connector (= GPIO30 via J1-21)"}
         for gpio in direct_ok:
             self.board.io.write_gpio(gpio, True)
             self.confirm(f"GPIO{gpio} high",
-                         f"GPIO{gpio} reads ~3.3 V? (no level shifter on this pin)")
+                         f"{ainPoint[gpio]} reads ~3.3 V? (no level shifter on this pin)")
             self.board.io.write_gpio(gpio, False)
 
         # Leave everything as it was: disabled, high-impedance inputs.
