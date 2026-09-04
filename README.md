@@ -211,6 +211,31 @@ python hwtest/checkout.py --sections do,dac
 The script drives each subsystem, tells you what to probe and what to
 expect, and prints a pass/fail summary.
 
+### Bringing up a newly built board
+
+For a freshly soldered board, work up to the full checkout in stages:
+
+1. **Before power**: continuity-check GND against the 3V3/5V/12V rails
+   (solder bridges on the fine-pitch I2C chips are the classic fault), and
+   inspect the SDA/SCL pins — the whole board hangs off that one bus.
+2. **Rails**: power the 12 V input from a current-limited bench supply
+   (~100 mA limit; idle draw is small) and verify 12 V/5 V/3V3 before and
+   after inserting the Teensy.
+3. **Smoke test**: `pio run -t upload`, then
+   `python hwtest/checkout.py --sections system`. The I2C scan is the key
+   gate: it must find 0x40 (switch PWM), 0x48 (ADC) and 0x60 (level-shift
+   PWM). An empty scan means SDA/SCL; one missing address means that chip.
+   Do not continue past a failing scan.
+4. **Core sections, one at a time**, each adding one hardware layer:
+   `do,di` (bare Teensy pins/connectors) → `dac` (SPI + AD5668) → `adc` →
+   `gpio` (level shifters) → `switches` (12 V path) → `signals` (timing).
+5. **Expansion boards**: the LED board adds I2C 0x49/0x50/0x57, the magnet
+   board 0x4A/0x54. Calibrate a LED channel first with a dummy load (a
+   power resistor), not an expensive LED — calibration sweeps to the
+   current limit you give it. Magnet calibration drives real coil current.
+6. Finally, with the camera wired: `--sections imaging` with a scope on the
+   trigger line.
+
 ## Migrating from v1 (pre-rewrite)
 
 The 2024/25 firmware and client (`$cmd/arg#%` protocol, `SyncBoardController`
