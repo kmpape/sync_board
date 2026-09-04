@@ -107,13 +107,16 @@ class Checkout:
             pump_thread.join()
 
     def section_di(self) -> None:
-        # Drive the inputs with 5 V, matching the board's digital IO domain:
-        # 3.3 V may sit below the input stage's switching threshold.
-        self.banner("Digital inputs (D_IN 1-4, 5 V logic)")
+        # D_OUT_1 (proven in the 'do' section) is the stimulus: it drives the
+        # board's own 5 V logic level, and toggling it tests both input
+        # states with a single jumper position per channel.
+        self.banner("Digital inputs (D_IN 1-4, driven from D_OUT_1)")
+        print("  Run the 'do' section first: this uses D_OUT_1 as the 5 V source.")
         for ch in range(1, 5):
-            self.instruct(f"Connect D_IN_{ch} to 5 V (e.g. a D_OUT driven high)")
+            self.instruct(f"Jumper D_OUT_1 to D_IN_{ch}")
+            self.board.io.write_do(1, True)
             high = self.board.io.read_di(ch)
-            self.instruct(f"Now connect D_IN_{ch} to GND")
+            self.board.io.write_do(1, False)
             low = self.board.io.read_di(ch)
             self.auto(f"DI{ch} reads", high and not low,
                       f"high={high}, low={low}")

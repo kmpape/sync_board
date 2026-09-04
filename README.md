@@ -232,8 +232,8 @@ For a freshly soldered board, work up to the full checkout in stages:
    each adding one hardware layer:
    - `do` — digital outputs 1–4 (buffered to **5 V** on the connector side);
      voltmeter on each D_OUT, scope for the pulse train.
-   - `di` — digital inputs 1–4 (5 V logic); jumper each D_IN to 5 V and GND
-     when asked (a D_OUT driven high works as the 5 V source).
+   - `di` — digital inputs 1–4 (5 V logic); jumper D_OUT_1 to each D_IN when
+     asked — the script toggles D_OUT_1 and verifies both states itself.
    - `dac` — SPI path + AD5668; voltmeter on DAC channels 1 and 8.
    - `adc` — ADS7828; apply a known voltage (e.g. the 3V3 rail) to ADC
      channel 1, then GND.
