@@ -24,6 +24,7 @@ import argparse
 import logging
 import pathlib
 import sys
+import threading
 import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
@@ -83,11 +84,27 @@ class Checkout:
             self.confirm(f"DO{ch} high", f"D_OUT_{ch} reads ~5 V?")
             self.board.io.write_do(ch, False)
             self.confirm(f"DO{ch} low", f"D_OUT_{ch} reads ~0 V?")
-        print("  Scoping a 50 ms pulse train on D_OUT_1 (10 pulses)...")
-        for _ in range(10):
-            self.board.io.pulse_do(1, 50)
-            time.sleep(0.1)
-        self.confirm("DO1 pulses", "Did D_OUT_1 show 50 ms high pulses?")
+        # Pulse until the operator answers, so there is no rush to arm the
+        # scope; each pulse is individually firmware-timed via pulse_do.
+        print("  Pulsing D_OUT_1 (50 ms high at 10 Hz) until you answer...")
+        stop = threading.Event()
+
+        def pump():
+            while not stop.is_set():
+                try:
+                    self.board.io.pulse_do(1, 50)
+                except SyncBoardError as exc:
+                    print(f"  pulse train stopped: {exc}")
+                    return
+                time.sleep(0.1)
+
+        pump_thread = threading.Thread(target=pump, daemon=True)
+        pump_thread.start()
+        try:
+            self.confirm("DO1 pulses", "Scope D_OUT_1: repeating 50 ms high pulses?")
+        finally:
+            stop.set()
+            pump_thread.join()
 
     def section_di(self) -> None:
         # Drive the inputs with 5 V, matching the board's digital IO domain:
