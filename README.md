@@ -51,11 +51,67 @@ async   : $0/log/<text>                      informational; never a reply
 
 Every request gets exactly one reply, echoing the host-chosen positive
 integer `tag`. Booleans are `0`/`1`; floats accept any C-parseable form.
-The full command list is the table at the bottom of `src/main.cpp`; argument
-meanings are documented on the handlers and in the subsystem headers.
+Argument semantics are documented on the handlers in `src/main.cpp` and in
+the subsystem headers.
 
 The protocol is debuggable by hand: connect a serial monitor and type
 `$1/ping` or `$2/status`.
+
+### Command reference
+
+Unless noted, commands reply with a bare `ok`. Most require an enabled
+system; `attachLed`, `attachMagnet` and `setupGpio` require a *disabled*
+one. Channels: DO/DI 1–4, ADC/DAC/LED 1–8 (DAC 0 = all), GPIO by label
+(13, 25–32), switches 1–16 (0 = all off), Hall sensors 0–2.
+
+| Command | Arguments | Ok reply values |
+|---|---|---|
+| `ping` | — | `syncboard`, version, uptime ms |
+| `status` | — | enabled, ledAttached, magnetAttached, syncMode |
+| `activity` | — | active-signal bitmask, imaging running |
+| `enable` / `disable` | — | — (disable blocks ~1 s) |
+| `resetConfig` | — | — |
+| `factoryReset` | — | — (erases EEPROM/calibrations) |
+| `attachLed` / `attachMagnet` | present | — |
+| `scanI2c` | — | count, addresses… |
+| `readDi` | channel | 0/1 |
+| `writeDo` | channel, high | — |
+| `pulseDo` | channel, ms | — (≤ 60 s) |
+| `setupGpio` | label, enabled, isInput | — (applied at next enable) |
+| `writeGpio` / `readGpio` | label [, high] | — / 0/1 |
+| `readAdc` | channel [, adcId 0=sync 1=LED 2=magnet] | volts |
+| `setDac` | channel, volts | — (0–3.3 V) |
+| `setSwitch` | channel, duty 0–1 | — |
+| `calibrateLed` | channel, maxCurrentA | — (blocks seconds; stores to EEPROM) |
+| `setLedLevel` | channel, level 0–1, feedback 0=current 1=optical | — |
+| `switchLed` | channel, on | — (refused untimed > 30 % level) |
+| `switchLedTimed` | channel, ms | — (≤ 30 min) |
+| `disableLeds` | — | — |
+| `measureLed` | channel | current A, optical mV |
+| `measurePhotodiode` | channel | mV |
+| `getLedSetup` | channel | level, current A, optical mV, max A |
+| `setupMagnet` | — | — (re-run after every enable) |
+| `enableMagnet` | on | — |
+| `selectMagnetOutput` | nc | — |
+| `calibrateMagnet` | — | — (blocks seconds; drives the coil) |
+| `calibrateHall` | hallId | — |
+| `setMagnetCurrent` | nc, value | — (calibrated units) |
+| `setMagnetField` | nc, mT | — (needs Hall calibration) |
+| `readHall` | hallId | mT |
+| `readMagnetAdc` | channel | volts |
+| `setMagnetDac` | channel, volts | — (raw; bring-up use) |
+| `setupSignal` | index, mode, option, repeat, isSlave | — (invalidates loaded data) |
+| `loadSignal` | index, n, value₀, delayMs₀, … | — (negative delay ends sequence) |
+| `loadSignalUniform` | index, n, intervalMs | — |
+| `startSignal` / `stopSignal` | index | — |
+| `readSignal` | index | n, values… |
+| `setSyncMode` | mode 0–2, ledByCamera | — |
+| `setupImaging` | 4 × (active, led, exposureMs) | — |
+| `startImaging` | numFrames | — (sanity-checked against config) |
+
+Signal `mode` values match `syncboard.SignalMode` (documented in
+`src/Signals.h`); `option` is the target channel/pin/sensor, or the slave
+bitmask for a conductor.
 
 ## Python client
 
