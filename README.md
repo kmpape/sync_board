@@ -62,26 +62,49 @@ The protocol is debuggable by hand: connect a serial monitor and type
 Requires Python ≥ 3.11 and pyserial. Install with `pip install -e .` (or use
 `uv run` inside the repo).
 
+Minimal example — flash an LED and read a voltage:
+
 ```python
-from syncboard import SyncBoard, SignalMode
+from syncboard import SyncBoard
 
 with SyncBoard.connect() as sb:        # port auto-discovered by USB id
     sb.initialise(led_board=True)      # attach boards + enable the system
 
-    # LEDs (channels 1..8; calibrate once per physically installed LED)
-    sb.leds.calibrate(5, max_current_a=8.0)
-    sb.leds.set_level(5, 0.10)
-    sb.leds.pulse(5, duration_ms=50)
+    sb.leds.calibrate(2)               # once per installed LED (stored in EEPROM)
+    sb.leds.set_level(2, 0.10)         # 10% of the calibrated maximum
+    sb.leds.pulse(2, duration_ms=50)
+
+    volts = sb.io.read_adc(3)
+# leaving the block disables the system and closes the port
+```
+
+More of the surface:
+
+```python
+from syncboard import SyncBoard, SignalMode, Frame
+
+with SyncBoard.connect() as sb:
+    sb.initialise(led_board=True, magnet_board=True)
 
     # Bench IO
     sb.io.write_do(1, True)
-    volts = sb.io.read_adc(3)
     sb.io.set_dac(2, 1.65)
+
+    # Magnet (calibrate once per session, then set fields via Hall feedback)
+    sb.magnet.calibrate()
+    sb.magnet.calibrate_hall(0)
+    sb.magnet.enable()
+    sb.magnet.set_field(1.5)           # mT
 
     # A repeating 100 Hz square wave on DAC 1
     sb.signals.configure(0, SignalMode.DAC, option=1, repeat=True)
     sb.signals.load(0, values=[3.0, 0.0], delays_ms=[5, 5])
     sb.signals.start(0)
+
+    # A two-frame image sequence, host-triggered (sync mode 1)
+    sb.imaging.set_sync_mode(1)
+    sb.imaging.configure([Frame(led=2, exposure_ms=10), Frame(led=4, exposure_ms=10)])
+    sb.imaging.start()
 ```
 
 Errors reported by the firmware raise `syncboard.CommandError` with the
