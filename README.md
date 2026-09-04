@@ -220,9 +220,20 @@ For a freshly soldered board, work up to the full checkout in stages:
 2. **Rails**: power the 12 V input from a current-limited bench supply
    with the current limit set to ~0.5A. and verify 12 V/5 V/3V3. With the Teensy inserted, expect **~125 mA @ 12 V idle** (measured on a known-good board). Note your board's actual idle current: deviation from it is the fastest health check.
 3. **Smoke test**: connect the Teensy USB to a computer, run `pio run -t upload`, then `python hwtest/checkout.py --sections system`. The I2C scan is the key gate: it must find 0x40 (switch PWM), 0x48 (ADC) and 0x60 (level-shift PWM). An empty scan means SDA/SCL; one missing address means that chip. Do not continue past a failing scan. While the system is enabled, also watch the display counter wheel: it is driven by the heartbeat, so a turning wheel with all of its LEDs lighting is the visual heartbeat check.
-4. **Core sections, one at a time**, each adding one hardware layer:
-   `do,di` (bare Teensy pins/connectors) → `dac` (SPI + AD5668) → `adc` →
-   `gpio` (level shifters) → `switches` (12 V path) → `signals` (timing).
+4. **Core sections, one at a time** (`python hwtest/checkout.py --sections <name>`),
+   each adding one hardware layer:
+   - `do` — digital outputs 1–4 (bare Teensy pins/connectors); voltmeter on
+     each D_OUT, scope for the pulse train.
+   - `di` — digital inputs 1–4; jumper each D_IN to 3.3 V and GND when asked.
+   - `dac` — SPI path + AD5668; voltmeter on DAC channels 1 and 8.
+   - `adc` — ADS7828; apply a known voltage (e.g. the 3V3 rail) to ADC
+     channel 1, then GND.
+   - `gpio` — level shifters + their PWM control channels; needs a jumper
+     from GPIO25 to D_IN_1 (loopback, verified automatically).
+   - `switches` — 12 V switch path; voltmeter on switch outputs 1 and 16.
+   - `signals` — the timing engine; scope a 100 Hz square wave on DAC 1 and
+     a 20 Hz conductor/slave train on D_OUT_1, plus an automatic ADC
+     recording check.
 5. **Expansion boards**: the LED board adds I2C 0x49/0x50/0x57, the magnet
    board 0x4A/0x54. Calibrate a LED channel first with a dummy load (a
    power resistor), not an expensive LED — calibration sweeps to the
