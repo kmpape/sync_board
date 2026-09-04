@@ -172,6 +172,8 @@ class Checkout:
 
         print("  Level-shifted GPIOs loop back into D_IN_1. Set each GPIO's")
         print("  level-select jumper to 5 V, or the input may not register.")
+        self.instruct("Set jumpers J1-20..J1-23 toward the GPIO connector "
+                      "(they otherwise route GPIO29-32 to the expansion headers)")
         for gpio in shifted:
             self.instruct(f"Jumper GPIO{gpio} to D_IN_1")
             self.board.io.write_gpio(gpio, True)
