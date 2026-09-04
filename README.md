@@ -239,8 +239,10 @@ For a freshly soldered board, work up to the full checkout in stages:
      S1-16..S1-19 to the S position (pins 1-2).
    - `adc` — ADS7828; apply a known voltage (e.g. the 3V3 rail) to the
      ADC_1 SMA, then GND (channels 1–4 need their S/E routing jumper in S).
-   - `gpio` — level shifters + their PWM control channels; needs a jumper
-     from GPIO25 to D_IN_1 (loopback, verified automatically).
+   - `gpio` — all nine GPIOs. The seven level-shifted ones (13, 25–28,
+     31, 32) loop back into D_IN_1 one at a time (jumper when asked,
+     level-select jumpers set to 5 V); GPIO29/30 have no shifter and get a
+     3.3 V voltmeter check.
    - `switches` — 12 V switch path; voltmeter on switch outputs 1 and 16.
    - `signals` — the timing engine; scope a 100 Hz square wave on DAC 1 and
      a 20 Hz conductor/slave train on D_OUT_1, plus an automatic ADC

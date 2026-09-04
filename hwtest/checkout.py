@@ -29,7 +29,7 @@ import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from syncboard import Frame, SignalMode, SyncBoard, SyncBoardError  # noqa: E402
+from syncboard import Frame, SignalMode, SyncBoard, SyncBoardError  # noqa: E402  (SyncBoardError also catches CommandError)
 
 
 class Checkout:
@@ -151,18 +151,45 @@ class Checkout:
         self.auto("ADC_1 zero", abs(value) < 0.05, f"{value:.3f} V")
 
     def section_gpio(self) -> None:
-        self.banner("GPIO loopback (GPIO25 output -> D_IN_1)")
-        self.instruct("Jumper GPIO25 to D_IN_1 (3.3 V level-shifter setting)")
+        self.banner("GPIOs (13, 25-32)")
+        # GPIO29/30 have no level shifter (analog-capable, 3.3 V straight off
+        # the Teensy): a 3.3 V high may sit below the 5 V-logic D_IN threshold,
+        # so they get a voltmeter check instead of the D_IN_1 loopback.
+        shifted = [13, 25, 26, 27, 28, 31, 32]
+        direct = [29, 30]
+
         self.board.disable()
-        self.board.io.setup_gpio(25, direction="output")
+        for gpio in shifted:
+            self.board.io.setup_gpio(gpio, direction="output")
+        direct_ok = []
+        for gpio in direct:
+            try:
+                self.board.io.setup_gpio(gpio, direction="output")
+                direct_ok.append(gpio)
+            except SyncBoardError as exc:
+                print(f"  Skipping GPIO{gpio}: {exc}")  # e.g. claimed by the magnet board
         self.board.enable()
-        self.board.io.write_gpio(25, True)
-        high = self.board.io.read_di(1)
-        self.board.io.write_gpio(25, False)
-        low = self.board.io.read_di(1)
-        self.auto("GPIO25 drives D_IN_1", high and not low, f"high={high}, low={low}")
+
+        print("  Level-shifted GPIOs loop back into D_IN_1. Set each GPIO's")
+        print("  level-select jumper to 5 V, or the input may not register.")
+        for gpio in shifted:
+            self.instruct(f"Jumper GPIO{gpio} to D_IN_1")
+            self.board.io.write_gpio(gpio, True)
+            high = self.board.io.read_di(1)
+            self.board.io.write_gpio(gpio, False)
+            low = self.board.io.read_di(1)
+            self.auto(f"GPIO{gpio} drives D_IN_1", high and not low,
+                      f"high={high}, low={low}")
+        for gpio in direct_ok:
+            self.board.io.write_gpio(gpio, True)
+            self.confirm(f"GPIO{gpio} high",
+                         f"GPIO{gpio} reads ~3.3 V? (no level shifter on this pin)")
+            self.board.io.write_gpio(gpio, False)
+
+        # Leave everything as it was: disabled, high-impedance inputs.
         self.board.disable()
-        self.board.io.setup_gpio(25, direction="input", enabled=False)
+        for gpio in shifted + direct_ok:
+            self.board.io.setup_gpio(gpio, direction="input", enabled=False)
         self.board.enable()
 
     def section_switches(self) -> None:
