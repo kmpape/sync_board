@@ -140,15 +140,25 @@ class Checkout:
 
     def section_adc(self) -> None:
         self.banner("ADC inputs (ADS7828, channels 1-8)")
-        print("  Feed each channel via its labelled ADC_n SMA connector (channels")
-        print("  1-4 need their S/E routing jumper in the S position).")
-        self.instruct("Apply a known voltage (e.g. 3.3 V rail) to the ADC_1 SMA")
-        value = self.board.io.read_adc(1)
-        print(f"  ADC_1 reads {value:.3f} V")
-        self.confirm("ADC_1", "Does that match what you applied (within ~1%)?")
-        self.instruct("Now connect the ADC_1 SMA to GND")
-        value = self.board.io.read_adc(1)
-        self.auto("ADC_1 zero", abs(value) < 0.05, f"{value:.3f} V")
+        # DAC-to-ADC loopback: automatic and absolute-checked, but ONLY valid
+        # after the 'dac' section passed against a voltmeter. The DAC and ADC
+        # share the Ref1 reference, so a wrong reference cancels out in this
+        # loopback and would go undetected here.
+        print("  Each channel is looped back from its DAC: run (and pass) the")
+        print("  'dac' section first, or these results mean nothing.")
+        print("  Channels 1-4 need their ADC SMA routing jumpers in S position.")
+        for ch in range(1, 9):
+            self.instruct(f"Connect DAC_{ch} to ADC_{ch} (SMA-SMA cable or jumper)")
+            ok = True
+            details = []
+            for volts in (0.5, 2.5):
+                self.board.io.set_dac(ch, volts)
+                value = self.board.io.read_adc(ch)
+                details.append(f"{volts:.1f}->{value:.3f} V")
+                if abs(value - volts) > 0.05:
+                    ok = False
+            self.board.io.set_dac(ch, 0.0)
+            self.auto(f"ADC_{ch} loopback", ok, ", ".join(details))
 
     def section_gpio(self) -> None:
         self.banner("GPIOs (13, 25-32)")

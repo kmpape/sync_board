@@ -237,8 +237,9 @@ For a freshly soldered board, work up to the full checkout in stages:
    - `dac` — SPI path + AD5668; voltmeter on each channel's DAC_n SMA
      connector. The script first asks to set the DAC SMA routing jumpers
      S1-16..S1-19 to the S position (pins 1-2).
-   - `adc` — ADS7828; apply a known voltage (e.g. the 3V3 rail) to the
-     ADC_1 SMA, then GND (channels 1–4 need their S/E routing jumper in S).
+   - `adc` — ADS7828; each channel is auto-verified by looping DAC_n into
+     ADC_n with an SMA cable. Requires the `dac` section to have passed
+     first (the two share Ref1, so a bad reference cancels out in loopback).
    - `gpio` — all nine GPIOs. The seven level-shifted ones (13, 25–28,
      31, 32) loop back into D_IN_1 one at a time (jumper when asked,
      level-select jumpers set to 5 V); GPIO29/30 have no shifter and get a
