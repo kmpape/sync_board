@@ -131,24 +131,24 @@ class Checkout:
         # the rest get a single mid-scale check (checks each output's path).
         for volts in (0.5, 1.65, 3.0):
             self.board.io.set_dac(1, volts)
-            self.confirm(f"DAC1 = {volts} V", f"DAC channel 1 reads ~{volts} V?")
+            self.confirm(f"DAC_1 = {volts} V", f"The DAC_1 SMA reads ~{volts} V?")
         self.board.io.set_dac(1, 0.0)
         for ch in range(2, 9):
             self.board.io.set_dac(ch, 2.0)
-            self.confirm(f"DAC{ch} = 2.0 V", f"DAC channel {ch} reads ~2.0 V?")
+            self.confirm(f"DAC_{ch} = 2.0 V", f"The DAC_{ch} SMA reads ~2.0 V?")
             self.board.io.set_dac(ch, 0.0)
 
     def section_adc(self) -> None:
         self.banner("ADC inputs (ADS7828, channels 1-8)")
         print("  Feed each channel via its labelled ADC_n SMA connector (channels")
         print("  1-4 need their S/E routing jumper in the S position).")
-        self.instruct("Apply a known voltage (e.g. 3.3 V rail) to ADC channel 1")
+        self.instruct("Apply a known voltage (e.g. 3.3 V rail) to the ADC_1 SMA")
         value = self.board.io.read_adc(1)
-        print(f"  ADC1 reads {value:.3f} V")
-        self.confirm("ADC1", "Does that match what you applied (within ~1%)?")
-        self.instruct("Now connect ADC channel 1 to GND")
+        print(f"  ADC_1 reads {value:.3f} V")
+        self.confirm("ADC_1", "Does that match what you applied (within ~1%)?")
+        self.instruct("Now connect the ADC_1 SMA to GND")
         value = self.board.io.read_adc(1)
-        self.auto("ADC1 zero", abs(value) < 0.05, f"{value:.3f} V")
+        self.auto("ADC_1 zero", abs(value) < 0.05, f"{value:.3f} V")
 
     def section_gpio(self) -> None:
         self.banner("GPIO loopback (GPIO25 output -> D_IN_1)")
