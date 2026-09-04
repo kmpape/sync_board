@@ -234,9 +234,11 @@ For a freshly soldered board, work up to the full checkout in stages:
      voltmeter on each D_OUT, scope for the pulse train.
    - `di` — digital inputs 1–4 (5 V logic); jumper D_OUT_1 to each D_IN when
      asked — the script toggles D_OUT_1 and verifies both states itself.
-   - `dac` — SPI path + AD5668; voltmeter on DAC channels 1 and 8.
-   - `adc` — ADS7828; apply a known voltage (e.g. the 3V3 rail) to ADC
-     channel 1, then GND.
+   - `dac` — SPI path + AD5668; voltmeter on the DAC SMA connectors
+     (channels 1–4, routing jumpers in the S position) and, if reachable,
+     the expansion-header nets DAC_5..8.
+   - `adc` — ADS7828; apply a known voltage (e.g. the 3V3 rail) to the ADC
+     channel 1 SMA, then GND.
    - `gpio` — level shifters + their PWM control channels; needs a jumper
      from GPIO25 to D_IN_1 (loopback, verified automatically).
    - `switches` — 12 V switch path; voltmeter on switch outputs 1 and 16.
