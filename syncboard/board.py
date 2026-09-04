@@ -17,6 +17,7 @@ executed the command. Firmware-side rejections raise
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Sequence
@@ -307,9 +308,33 @@ class SignalApi:
 
     NUM_SIGNALS = 5
     MAX_LENGTH = 2000
+    RECORDING_MODES = frozenset(
+        {SignalMode.ADC, SignalMode.MAG_ADC, SignalMode.MAG_HALL_READ}
+    )
 
     def __init__(self, transport: Transport):
         self._t = transport
+
+    def record(self, mode: SignalMode, channel: int, n_samples: int,
+               interval_ms: float, index: int = 4) -> list[float]:
+        """Records ``n_samples`` at a fixed interval and returns them.
+
+        One-call convenience over configure + load_uniform + start + read for
+        the recording modes (ADC, MAG_ADC, MAG_HALL_READ); ``channel`` is the
+        ADC channel or Hall sensor id. Blocks for the recording duration.
+        Uses signal slot ``index`` (default: the last one, to stay clear of
+        manually managed slots).
+        """
+        if mode not in self.RECORDING_MODES:
+            raise ValueError(f"{mode!r} is not a recording mode")
+        self.configure(index, mode, option=channel)
+        self.load_uniform(index, n_samples, interval_ms)
+        self.start(index)
+        # The firmware stops the signal by itself after the last sample; the
+        # margin absorbs loop-scheduling jitter and the ~0.6 ms ADC read time.
+        duration_s = n_samples * interval_ms / 1000.0
+        time.sleep(duration_s * 1.05 + 0.1)
+        return self.read(index)
 
     def configure(self, index: int, mode: SignalMode, option: int = 0,
                   repeat: bool = False, is_slave: bool = False) -> None:

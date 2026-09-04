@@ -37,6 +37,16 @@ def test_signal_load_interleaves_values_and_delays(board):
     assert args == (2, 2, 1.0, 5.0, 0.0, -1.0)
 
 
+def test_signal_record_runs_the_full_sequence(board):
+    board._t.replies["readSignal"] = ("2", "0.5", "0.6")
+    data = board.signals.record(SignalMode.ADC, channel=3, n_samples=2, interval_ms=1.0)
+    assert data == [0.5, 0.6]
+    commands = [command for command, _ in board._t.requests]
+    assert commands == ["setupSignal", "loadSignalUniform", "startSignal", "readSignal"]
+    with pytest.raises(ValueError, match="recording"):
+        board.signals.record(SignalMode.DAC, channel=1, n_samples=2, interval_ms=1.0)
+
+
 def test_signal_configure_sends_wire_values(board):
     board.signals.configure(0, SignalMode.DO, option=3, repeat=True, is_slave=False)
     assert board._t.requests[-1] == ("setupSignal", (0, 8, 3, True, False))
