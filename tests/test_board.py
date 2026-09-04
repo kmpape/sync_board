@@ -20,7 +20,10 @@ class StubTransport:
 
 @pytest.fixture
 def board():
-    return SyncBoard(StubTransport({"status": ("1", "1", "0", "1")}))
+    return SyncBoard(StubTransport({
+        "status": ("1", "1", "0", "1"),
+        "activity": ("0", "0"),  # nothing running
+    }))
 
 
 def test_status_parsing(board):
@@ -42,9 +45,22 @@ def test_signal_record_runs_the_full_sequence(board):
     data = board.signals.record(SignalMode.ADC, channel=3, n_samples=2, interval_ms=1.0)
     assert data == [0.5, 0.6]
     commands = [command for command, _ in board._t.requests]
-    assert commands == ["setupSignal", "loadSignalUniform", "startSignal", "readSignal"]
+    assert commands == ["setupSignal", "loadSignalUniform", "startSignal",
+                        "activity", "readSignal"]
     with pytest.raises(ValueError, match="recording"):
         board.signals.record(SignalMode.DAC, channel=1, n_samples=2, interval_ms=1.0)
+
+
+def test_activity_parsing_and_wait_timeout(board):
+    board._t.replies["activity"] = ("5", "1")  # signals 0 and 2 active, imaging running
+    assert board.signals.is_active(0)
+    assert not board.signals.is_active(1)
+    assert board.signals.is_active(2)
+    assert board.imaging.is_running()
+    with pytest.raises(TimeoutError):
+        board.signals.wait(0, timeout=0.03, poll_interval_s=0.01)
+    board._t.replies["activity"] = ("0", "0")
+    board.signals.wait(0, timeout=0.1)  # returns immediately
 
 
 def test_signal_configure_sends_wire_values(board):

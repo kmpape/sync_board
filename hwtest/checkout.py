@@ -166,7 +166,7 @@ class Checkout:
         self.board.signals.configure(3, SignalMode.ADC, option=1)
         self.board.signals.load_uniform(3, 200, interval_ms=2)
         self.board.signals.start(3)
-        time.sleep(0.6)
+        self.board.signals.wait(3, timeout=2.0)
         data = self.board.signals.read(3)
         print(f"  Recorded {len(data)} samples, first 5: "
               f"{[f'{v:.3f}' for v in data[:5]]}")
@@ -227,6 +227,7 @@ class Checkout:
         print("  Starting a 1-frame sequence (camera trigger pin 32, TrI)...")
         self.instruct("Scope the camera trigger line; trigger on a rising edge")
         self.board.imaging.start()
+        self.board.imaging.wait(timeout=2.0)
         self.confirm("camera trigger", "Did you catch a ~1 ms high pulse?")
         self.board.imaging.set_sync_mode(0)
 

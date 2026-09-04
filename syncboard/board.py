@@ -330,11 +330,28 @@ class SignalApi:
         self.configure(index, mode, option=channel)
         self.load_uniform(index, n_samples, interval_ms)
         self.start(index)
-        # The firmware stops the signal by itself after the last sample; the
-        # margin absorbs loop-scheduling jitter and the ~0.6 ms ADC read time.
+        # The firmware stops the signal by itself after the last sample.
         duration_s = n_samples * interval_ms / 1000.0
-        time.sleep(duration_s * 1.05 + 0.1)
+        self.wait(index, timeout=duration_s * 1.5 + 2.0)
         return self.read(index)
+
+    def is_active(self, index: int) -> bool:
+        """True while a signal is running (a repeating signal stays active
+        until stopped)."""
+        return bool(int(self._t.request("activity")[0]) >> index & 1)
+
+    def wait(self, index: int, timeout: float | None = None,
+             poll_interval_s: float = 0.01) -> None:
+        """Blocks until the signal finishes.
+
+        Only meaningful for non-repeating signals — a repeating one never
+        finishes on its own. Raises TimeoutError if the deadline passes.
+        """
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while self.is_active(index):
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError(f"signal {index} still active after {timeout:.1f} s")
+            time.sleep(poll_interval_s)
 
     def configure(self, index: int, mode: SignalMode, option: int = 0,
                   repeat: bool = False, is_slave: bool = False) -> None:
@@ -467,3 +484,20 @@ class ImagingApi:
         if self._num_frames == 0:
             raise RuntimeError("no sequence configured; call configure() first")
         self._t.request("startImaging", self._num_frames)
+
+    def is_running(self) -> bool:
+        """True while an image sequence is in flight."""
+        return self._t.request("activity")[1] == "1"
+
+    def wait(self, timeout: float | None = None,
+             poll_interval_s: float = 0.01) -> None:
+        """Blocks until the current image sequence finishes.
+
+        Raises TimeoutError if the deadline passes (note the firmware itself
+        aborts and disables after its 10 s sequence watchdog).
+        """
+        deadline = None if timeout is None else time.monotonic() + timeout
+        while self.is_running():
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError(f"image sequence still running after {timeout:.1f} s")
+            time.sleep(poll_interval_s)

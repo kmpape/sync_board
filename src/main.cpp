@@ -72,6 +72,18 @@ void cmdStatus() {
   protocol::endReply();
 }
 
+// Cheap poll target for hosts waiting on finite work to complete.
+void cmdActivity() {
+  uint32_t signalMask = 0;
+  for (int i = 0; i < signals::kNumSignals; i++) {
+    if (signals::isActive(i)) signalMask |= (1u << i);
+  }
+  protocol::beginOk();
+  protocol::addUint(signalMask);
+  protocol::addInt(imaging::sequenceRunning() ? 1 : 0);
+  protocol::endReply();
+}
+
 void cmdEnable() { system_::setEnabled(true); }
 void cmdDisable() { system_::setEnabled(false); }
 void cmdResetConfig() { system_::resetConfig(); }
@@ -459,6 +471,7 @@ struct CommandEntry {
 constexpr CommandEntry kCommands[] = {
     {"ping", cmdPing},
     {"status", cmdStatus},
+    {"activity", cmdActivity},
     {"enable", cmdEnable},
     {"disable", cmdDisable},
     {"resetConfig", cmdResetConfig},

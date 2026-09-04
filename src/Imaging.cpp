@@ -224,6 +224,8 @@ void startSequence(int expectedImages) {
   beginSequence();
 }
 
+bool sequenceRunning() { return running(); }
+
 void hardReset() {
   currentImage = -1;
   exposing = false;

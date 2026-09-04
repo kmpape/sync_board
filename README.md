@@ -96,6 +96,9 @@ with SyncBoard.connect() as sb:
     sb.magnet.enable()
     sb.magnet.set_field(1.5)           # mT
 
+    # Record 500 ADC samples at 2 ms spacing (one call, blocks until done)
+    trace = sb.signals.record(SignalMode.ADC, channel=3, n_samples=500, interval_ms=2.0)
+
     # A repeating 100 Hz square wave on DAC 1
     sb.signals.configure(0, SignalMode.DAC, option=1, repeat=True)
     sb.signals.load(0, values=[3.0, 0.0], delays_ms=[5, 5])
@@ -105,6 +108,7 @@ with SyncBoard.connect() as sb:
     sb.imaging.set_sync_mode(1)
     sb.imaging.configure([Frame(led=2, exposure_ms=10), Frame(led=4, exposure_ms=10)])
     sb.imaging.start()
+    sb.imaging.wait(timeout=2.0)   # blocks until the sequence completes
 ```
 
 Errors reported by the firmware raise `syncboard.CommandError` with the
