@@ -223,7 +223,10 @@ For a freshly soldered board, work up to the full checkout in stages:
    **Before combining board power with USB**: cut the VUSB↔VIN pad on the
    Teensy's underside (see the note on the schematic). Uncut, USB ties the
    computer's 5 V to the board's 5 V regulator output and the two supplies
-   fight. Until it is cut, use board power *or* USB, never both.
+   fight. If the Teensy is already soldered down (pad inaccessible), use a
+   **data-only USB cable** instead — a cable with the VBUS (red) conductor
+   cut, data and GND intact; label it. Until one of the two is done, use
+   board power *or* USB, never both.
 3. **Smoke test**: connect the Teensy USB to a computer, run `pio run -t upload`, then `python hwtest/checkout.py --sections system`. The I2C scan is the key gate: it must find 0x40 (switch PWM), 0x48 (ADC) and 0x60 (level-shift PWM). An empty scan means SDA/SCL; one missing address means that chip. Do not continue past a failing scan. While the system is enabled, also watch the display counter wheel: it is driven by the heartbeat, so a turning wheel with all of its LEDs lighting is the visual heartbeat check.
 4. **Core sections, one at a time** (`python hwtest/checkout.py --sections <name>`),
    each adding one hardware layer:
