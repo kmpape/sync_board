@@ -75,10 +75,12 @@ class Checkout:
                      "5 Hz square wave?")
 
     def section_do(self) -> None:
-        self.banner("Digital outputs (D_OUT 1-4, Teensy pins 5-8)")
+        # The connector-side DO nets (d4*-d7* on the schematic) go through
+        # buffers supplied from the 5 V rail, so a high reads 5 V, not 3.3 V.
+        self.banner("Digital outputs (D_OUT 1-4, buffered to 5 V)")
         for ch in range(1, 5):
             self.board.io.write_do(ch, True)
-            self.confirm(f"DO{ch} high", f"D_OUT_{ch} reads ~3.3 V?")
+            self.confirm(f"DO{ch} high", f"D_OUT_{ch} reads ~5 V?")
             self.board.io.write_do(ch, False)
             self.confirm(f"DO{ch} low", f"D_OUT_{ch} reads ~0 V?")
         print("  Scoping a 50 ms pulse train on D_OUT_1 (10 pulses)...")
@@ -88,9 +90,11 @@ class Checkout:
         self.confirm("DO1 pulses", "Did D_OUT_1 show 50 ms high pulses?")
 
     def section_di(self) -> None:
-        self.banner("Digital inputs (D_IN 1-4, Teensy pins 1-4)")
+        # Drive the inputs with 5 V, matching the board's digital IO domain:
+        # 3.3 V may sit below the input stage's switching threshold.
+        self.banner("Digital inputs (D_IN 1-4, 5 V logic)")
         for ch in range(1, 5):
-            self.instruct(f"Connect D_IN_{ch} to 3.3 V")
+            self.instruct(f"Connect D_IN_{ch} to 5 V (e.g. a D_OUT driven high)")
             high = self.board.io.read_di(ch)
             self.instruct(f"Now connect D_IN_{ch} to GND")
             low = self.board.io.read_di(ch)
