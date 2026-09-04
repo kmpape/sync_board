@@ -216,19 +216,10 @@ expect, and prints a pass/fail summary.
 For a freshly soldered board, work up to the full checkout in stages:
 
 1. **Before power**: continuity-check GND against the 3V3/5V/12V rails
-   (solder bridges on the fine-pitch I2C chips are the classic fault), and
-   inspect the SDA/SCL pins — the whole board hangs off that one bus.
-2. **Rails**: power the 12 V input from a current-limited bench supply and
-   verify 12 V/5 V/3V3. With the Teensy inserted and powered from this rail,
-   expect **~125 mA @ 12 V idle** (measured on a known-good board) — set the
-   limit to ~0.5 A; a 0.1 A limit trips on the Teensy alone and the supply
-   collapses into constant-current mode. Note your board's actual idle
-   current: deviation from it is the fastest health check.
-3. **Smoke test**: `pio run -t upload`, then
-   `python hwtest/checkout.py --sections system`. The I2C scan is the key
-   gate: it must find 0x40 (switch PWM), 0x48 (ADC) and 0x60 (level-shift
-   PWM). An empty scan means SDA/SCL; one missing address means that chip.
-   Do not continue past a failing scan.
+   (solder bridges on the fine-pitch I2C chips are the classic fault), and inspect the SDA/SCL pins.
+2. **Rails**: power the 12 V input from a current-limited bench supply
+   with the current limit set to ~0.5A. and verify 12 V/5 V/3V3. With the Teensy inserted, expect **~125 mA @ 12 V idle** (measured on a known-good board). Note your board's actual idle current: deviation from it is the fastest health check.
+3. **Smoke test**: connect the Teensy USB to a computer, run `pio run -t upload`, then `python hwtest/checkout.py --sections system`. The I2C scan is the key gate: it must find 0x40 (switch PWM), 0x48 (ADC) and 0x60 (level-shift PWM). An empty scan means SDA/SCL; one missing address means that chip. Do not continue past a failing scan. While the system is enabled, also watch the display counter wheel: it is driven by the heartbeat, so a turning wheel with all of its LEDs lighting is the visual heartbeat check.
 4. **Core sections, one at a time**, each adding one hardware layer:
    `do,di` (bare Teensy pins/connectors) → `dac` (SPI + AD5668) → `adc` →
    `gpio` (level shifters) → `switches` (12 V path) → `signals` (timing).
