@@ -11,7 +11,8 @@ src/            firmware (PlatformIO, Arduino framework)
 syncboard/      Python client package
 tests/          unit tests for the client (no hardware needed)
 hwtest/         interactive hardware checkout script (bench + scope)
-schematics/     board schematic (SyncBoard1.SchDoc, Altium)
+docs/bringup/   per-board bench bring-up procedures
+schematics/     board schematics (Altium .SchDoc)
 ```
 
 ## Firmware
@@ -215,52 +216,11 @@ expect, and prints a pass/fail summary.
 
 ### Bringing up a newly built board
 
-For a freshly soldered board, work up to the full checkout in stages:
+For a freshly soldered board, work up to the full checkout in stages
+following the per-board guides in [`docs/bringup/`](docs/bringup/):
 
-1. **Before power**: continuity-check GND against the 3V3/5V/12V rails
-   (solder bridges on the fine-pitch I2C chips are the classic fault), and inspect the SDA/SCL pins.
-2. **Rails**: power the 12 V input from a current-limited bench supply
-   with the current limit set to ~0.5A. and verify 12 V/5 V/3V3. With the Teensy inserted, expect **~125 mA @ 12 V idle** (measured on a known-good board). Note your board's actual idle current: deviation from it is the fastest health check.
-   **Before combining board power with USB**: cut the VUSB↔VIN pad on the
-   Teensy's underside (see the note on the schematic). Uncut, USB ties the
-   computer's 5 V to the board's 5 V regulator output and the two supplies
-   fight. If the Teensy is already soldered down (pad inaccessible), use a
-   **data-only USB cable** instead — a cable with the VBUS (red) conductor
-   cut, data and GND intact; label it. Until one of the two is done, use
-   board power *or* USB, never both.
-3. **Smoke test**: connect the Teensy USB to a computer, run `pio run -t upload`, then `python hwtest/checkout.py --sections system`. The I2C scan is the key gate: it must find 0x40 (switch PWM), 0x48 (ADC) and 0x60 (level-shift PWM). An empty scan means SDA/SCL; one missing address means that chip. Do not continue past a failing scan. While the system is enabled, also watch the display counter wheel: it is driven by the heartbeat, so a turning wheel with all of its LEDs lighting is the visual heartbeat check.
-4. **Core sections, one at a time** (`python hwtest/checkout.py --sections <name>`),
-   each adding one hardware layer:
-   - `do` — digital outputs 1–4 (buffered to **5 V** on the connector side);
-     voltmeter on each D_OUT, scope for the pulse train.
-   - `di` — digital inputs 1–4 (5 V logic); jumper D_OUT_1 to each D_IN when
-     asked — the script toggles D_OUT_1 and verifies both states itself.
-   - `dac` — SPI path + AD5668; voltmeter on each channel's DAC_n SMA
-     connector. The script first asks to set the DAC SMA routing jumpers
-     S1-16..S1-19 to the S position (pins 1-2).
-   - `adc` — ADS7828; each channel is auto-verified by looping DAC_n into
-     ADC_n with an SMA cable. Requires the `dac` section to have passed
-     first (the two share Ref1, so a bad reference cancels out in loopback).
-   - `gpio` — all nine GPIOs. The seven level-shifted ones (13, 25–28,
-     31, 32) loop back into D_IN_1 one at a time (jumper when asked,
-     level-select jumpers set to 5 V); GPIO29/30 have no shifter and get a
-     3.3 V voltmeter check. GPIO29–32 surface on the Ain0/Ain1 and
-     PWM0/PWM1 connectors via jumpers J1-20..J1-23 (other position:
-     expansion headers) — the script walks through this.
-   - `switches` — 12 V switch path. The switches are **low-side** drivers:
-     channel n sinks net Po(n−1) (on the power-switch headers) to GND when
-     on; loads connect between +12 V and the Po pin. Voltmeter on the Po
-     pins; ~0 V means on.
-   - `signals` — the timing engine; scope a 100 Hz square wave on DAC 1 and
-     a 20 Hz conductor/slave train on D_OUT_1, plus an automatic ADC
-     recording check.
-5. **Expansion boards**: the LED board adds I2C 0x49/0x50/0x57, the magnet
-   board 0x4A/0x54. Calibrate a LED channel first with a dummy load (a
-   power resistor), not an expensive LED — calibration sweeps to the
-   current limit you give it. Magnet calibration drives real coil current.
-6. `--sections imaging` verifies the six camera input lines (driven from
-   D_OUT_1 via jumper) and, with a scope on the trigger line, the camera
-   trigger pulse. Repeat with the real camera wired when integrating.
+- [`docs/bringup/syncboard.md`](docs/bringup/syncboard.md) — SyncBoard
+- [`docs/bringup/led-board.md`](docs/bringup/led-board.md) — LED board
 
 ## Migrating from v1 (pre-rewrite)
 
