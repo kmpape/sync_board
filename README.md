@@ -209,10 +209,11 @@ python hwtest/checkout.py                  # core sections (IO, DAC/ADC, signals
 python hwtest/checkout.py --led 1          # also test LED channel 1
 python hwtest/checkout.py --magnet         # also test the magnet board
 python hwtest/checkout.py --sections do,dac
+python hwtest/led_board.py                 # LED board through a SyncBoard (see docs/bringup)
 ```
 
-The script drives each subsystem, tells you what to probe and what to
-expect, and prints a pass/fail summary.
+The scripts drive each subsystem, tell you what to probe and what to
+expect, and print a pass/fail summary.
 
 ### Bringing up a newly built board
 
