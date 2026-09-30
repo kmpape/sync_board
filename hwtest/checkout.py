@@ -78,7 +78,7 @@ class Checkout:
         self.banner("Digital outputs (D_OUT 1-4, Teensy pins 5-8)")
         for ch in range(1, 5):
             self.board.io.write_do(ch, True)
-            self.confirm(f"DO{ch} high", f"D_OUT_{ch} reads ~3.3 V?")
+            self.confirm(f"DO{ch} high", f"D_OUT_{ch} reads ~5 V?")
             self.board.io.write_do(ch, False)
             self.confirm(f"DO{ch} low", f"D_OUT_{ch} reads ~0 V?")
         print("  Scoping a 50 ms pulse train on D_OUT_1 (10 pulses)...")
