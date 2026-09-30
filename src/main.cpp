@@ -430,6 +430,18 @@ void cmdReadSignal() {
 
 // ---- Imaging ---------------------------------------------------------------
 
+// Raw camera interface inputs; for bring-up and camera integration debugging.
+void cmdReadCameraInputs() {
+  if (!requireEnabled()) return;
+  protocol::beginOk();
+  protocol::addInt(digitalReadFast(pins::kCameraTriggerReady) ? 1 : 0);
+  protocol::addInt(digitalReadFast(pins::kCameraReading) ? 1 : 0);
+  for (int i = 0; i < 4; i++) {
+    protocol::addInt(digitalReadFast(pins::kCameraLed[i]) ? 1 : 0);
+  }
+  protocol::endReply();
+}
+
 void cmdSetSyncMode() {
   const int mode = argInt(0);
   const bool ledByCamera = argBool(1);
@@ -512,6 +524,7 @@ constexpr CommandEntry kCommands[] = {
     {"startSignal", cmdStartSignal},
     {"stopSignal", cmdStopSignal},
     {"readSignal", cmdReadSignal},
+    {"readCameraInputs", cmdReadCameraInputs},
     {"setSyncMode", cmdSetSyncMode},
     {"setupImaging", cmdSetupImaging},
     {"startImaging", cmdStartImaging},

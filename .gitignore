@@ -53,3 +53,4 @@ logs/
 # uv/venv
 .venv/
 uv.lock
+.ipynb_checkpoints/

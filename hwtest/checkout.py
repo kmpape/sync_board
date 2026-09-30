@@ -24,11 +24,12 @@ import argparse
 import logging
 import pathlib
 import sys
+import threading
 import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
-from syncboard import Frame, SignalMode, SyncBoard, SyncBoardError  # noqa: E402
+from syncboard import Frame, SignalMode, SyncBoard, SyncBoardError  # noqa: E402  (SyncBoardError also catches CommandError)
 
 
 class Checkout:
@@ -75,69 +76,171 @@ class Checkout:
                      "5 Hz square wave?")
 
     def section_do(self) -> None:
-        self.banner("Digital outputs (D_OUT 1-4, Teensy pins 5-8)")
+        # The connector-side DO nets (d4*-d7* on the schematic) go through
+        # buffers supplied from the 5 V rail, so a high reads 5 V, not 3.3 V.
+        self.banner("Digital outputs (D_OUT 1-4, buffered to 5 V)")
         for ch in range(1, 5):
             self.board.io.write_do(ch, True)
             self.confirm(f"DO{ch} high", f"D_OUT_{ch} reads ~5 V?")
             self.board.io.write_do(ch, False)
             self.confirm(f"DO{ch} low", f"D_OUT_{ch} reads ~0 V?")
-        print("  Scoping a 50 ms pulse train on D_OUT_1 (10 pulses)...")
-        for _ in range(10):
-            self.board.io.pulse_do(1, 50)
-            time.sleep(0.1)
-        self.confirm("DO1 pulses", "Did D_OUT_1 show 50 ms high pulses?")
+        # Pulse until the operator answers, so there is no rush to arm the
+        # scope; each pulse is individually firmware-timed via pulse_do.
+        print("  Pulsing D_OUT_1 (50 ms high at 10 Hz) until you answer...")
+        stop = threading.Event()
+
+        def pump():
+            while not stop.is_set():
+                try:
+                    self.board.io.pulse_do(1, 50)
+                except SyncBoardError as exc:
+                    print(f"  pulse train stopped: {exc}")
+                    return
+                time.sleep(0.1)
+
+        pump_thread = threading.Thread(target=pump, daemon=True)
+        pump_thread.start()
+        try:
+            self.confirm("DO1 pulses", "Scope D_OUT_1: repeating 50 ms high pulses?")
+        finally:
+            stop.set()
+            pump_thread.join()
 
     def section_di(self) -> None:
-        self.banner("Digital inputs (D_IN 1-4, Teensy pins 1-4)")
+        # D_OUT_1 (proven in the 'do' section) is the stimulus: it drives the
+        # board's own 5 V logic level, and toggling it tests both input
+        # states with a single jumper position per channel.
+        self.banner("Digital inputs (D_IN 1-4, driven from D_OUT_1)")
+        print("  Run the 'do' section first: this uses D_OUT_1 as the 5 V source.")
         for ch in range(1, 5):
-            self.instruct(f"Connect D_IN_{ch} to 3.3 V")
+            self.instruct(f"Jumper D_OUT_1 to D_IN_{ch}")
+            self.board.io.write_do(1, True)
             high = self.board.io.read_di(ch)
-            self.instruct(f"Now connect D_IN_{ch} to GND")
+            self.board.io.write_do(1, False)
             low = self.board.io.read_di(ch)
             self.auto(f"DI{ch} reads", high and not low,
                       f"high={high}, low={low}")
 
     def section_dac(self) -> None:
         self.banner("DAC outputs (AD5668, channels 1-8)")
-        channels = [1, 8]  # first and last exercise the full address range
-        for ch in channels:
-            for volts in (0.5, 1.65, 3.0):
-                self.board.io.set_dac(ch, volts)
-                self.confirm(f"DAC{ch} = {volts} V", f"DAC channel {ch} reads ~{volts} V?")
+        print("  Probe each channel's labelled DAC_n SMA connector (centre pin")
+        print("  vs shield).")
+        self.instruct("Put jumpers S1-16 through S1-19 (the DAC SMA routing "
+                      "jumpers) into the S position (pins 1-2)")
+        # Channel 1 gets a three-point sweep (checks the DAC + reference);
+        # the rest get a single mid-scale check (checks each output's path).
+        for volts in (0.5, 1.65, 3.0):
+            self.board.io.set_dac(1, volts)
+            self.confirm(f"DAC_1 = {volts} V", f"The DAC_1 SMA reads ~{volts} V?")
+        self.board.io.set_dac(1, 0.0)
+        for ch in range(2, 9):
+            self.board.io.set_dac(ch, 2.0)
+            self.confirm(f"DAC_{ch} = 2.0 V", f"The DAC_{ch} SMA reads ~2.0 V?")
             self.board.io.set_dac(ch, 0.0)
 
     def section_adc(self) -> None:
         self.banner("ADC inputs (ADS7828, channels 1-8)")
-        self.instruct("Apply a known voltage (e.g. 3.3 V rail) to ADC channel 1")
-        value = self.board.io.read_adc(1)
-        print(f"  ADC1 reads {value:.3f} V")
-        self.confirm("ADC1", "Does that match what you applied (within ~1%)?")
-        self.instruct("Now connect ADC channel 1 to GND")
-        value = self.board.io.read_adc(1)
-        self.auto("ADC1 zero", abs(value) < 0.05, f"{value:.3f} V")
+        # DAC-to-ADC loopback: automatic and absolute-checked, but ONLY valid
+        # after the 'dac' section passed against a voltmeter. The DAC and ADC
+        # share the Ref1 reference, so a wrong reference cancels out in this
+        # loopback and would go undetected here.
+        print("  Each channel is looped back from its DAC: run (and pass) the")
+        print("  'dac' section first, or these results mean nothing.")
+        print("  Channels 1-4 need their ADC SMA routing jumpers in S position.")
+        for ch in range(1, 9):
+            self.instruct(f"Connect DAC_{ch} to ADC_{ch} (SMA-SMA cable or jumper)")
+            ok = True
+            details = []
+            for volts in (0.5, 2.5):
+                self.board.io.set_dac(ch, volts)
+                value = self.board.io.read_adc(ch)
+                details.append(f"{volts:.1f}->{value:.3f} V")
+                if abs(value - volts) > 0.05:
+                    ok = False
+            self.board.io.set_dac(ch, 0.0)
+            self.auto(f"ADC_{ch} loopback", ok, ", ".join(details))
 
     def section_gpio(self) -> None:
-        self.banner("GPIO loopback (GPIO25 output -> D_IN_1)")
-        self.instruct("Jumper GPIO25 to D_IN_1 (3.3 V level-shifter setting)")
+        self.banner("GPIOs (13, 25-32)")
+        # GPIO29/30 have no level shifter (analog-capable, 3.3 V straight off
+        # the Teensy): a 3.3 V high may sit below the 5 V-logic D_IN threshold,
+        # so they get a voltmeter check instead of the D_IN_1 loopback.
+        shifted = [13, 25, 26, 27, 28, 31, 32]
+        direct = [29, 30]
+
         self.board.disable()
-        self.board.io.setup_gpio(25, direction="output")
+        for gpio in shifted:
+            self.board.io.setup_gpio(gpio, direction="output")
+        direct_ok = []
+        for gpio in direct:
+            try:
+                self.board.io.setup_gpio(gpio, direction="output")
+                direct_ok.append(gpio)
+            except SyncBoardError as exc:
+                print(f"  Skipping GPIO{gpio}: {exc}")  # e.g. claimed by the magnet board
         self.board.enable()
-        self.board.io.write_gpio(25, True)
-        high = self.board.io.read_di(1)
-        self.board.io.write_gpio(25, False)
-        low = self.board.io.read_di(1)
-        self.auto("GPIO25 drives D_IN_1", high and not low, f"high={high}, low={low}")
+
+        print("  Level-shifted GPIOs loop back into D_IN_1. Set each GPIO's")
+        print("  level-select jumper to 5 V, or the input may not register.")
+        # Per the schematic, GPIO29-32 surface on other connectors:
+        #   J1-20: GPIO29 -> Ain0    J1-22: GPIO31 -> PWM0
+        #   J1-21: GPIO30 -> Ain1    J1-23: GPIO32 -> PWM1
+        # (the other jumper position routes them to the expansion headers).
+        self.instruct("Set J1-20/J1-21 toward Ain0/Ain1 and J1-22/J1-23 toward "
+                      "PWM0/PWM1 (not the expansion side)")
+        probePoint = {31: "the PWM0 connector (= GPIO31 via J1-22)",
+                      32: "the PWM1 connector (= GPIO32 via J1-23)"}
+        for gpio in shifted:
+            self.instruct(f"Jumper {probePoint.get(gpio, f'GPIO{gpio}')} to D_IN_1")
+            self.board.io.write_gpio(gpio, True)
+            high = self.board.io.read_di(1)
+            self.board.io.write_gpio(gpio, False)
+            low = self.board.io.read_di(1)
+            self.auto(f"GPIO{gpio} drives D_IN_1", high and not low,
+                      f"high={high}, low={low}")
+        ainPoint = {29: "the Ain0 connector (= GPIO29 via J1-20)",
+                    30: "the Ain1 connector (= GPIO30 via J1-21)"}
+        for gpio in direct_ok:
+            self.board.io.write_gpio(gpio, True)
+            self.confirm(f"GPIO{gpio} high",
+                         f"{ainPoint[gpio]} reads ~3.3 V? (no level shifter on this pin)")
+            self.board.io.write_gpio(gpio, False)
+
+        # Input direction: flip one shifted GPIO to input and drive it from
+        # D_OUT_1, proving the shifter direction-reversal machinery. (5 V is
+        # safe through the shifter; NEVER drive 5 V into GPIO29/30 directly -
+        # those are unshifted and the Teensy is not 5 V tolerant.)
         self.board.disable()
-        self.board.io.setup_gpio(25, direction="input", enabled=False)
+        self.board.io.setup_gpio(25, direction="input")
+        self.board.enable()
+        self.instruct("Jumper D_OUT_1 to GPIO25")
+        self.board.io.write_do(1, True)
+        high = self.board.io.read_gpio(25)
+        self.board.io.write_do(1, False)
+        low = self.board.io.read_gpio(25)
+        self.auto("GPIO25 reads as input", high and not low, f"high={high}, low={low}")
+
+        # Leave everything as it was: disabled, high-impedance inputs.
+        self.board.disable()
+        for gpio in shifted + direct_ok:
+            self.board.io.setup_gpio(gpio, direction="input", enabled=False)
         self.board.enable()
 
     def section_switches(self) -> None:
-        self.banner("12 V power switches (channels 1-16)")
-        for ch in (1, 16):
+        self.banner("12 V power switches (low-side drivers, channels 1-16)")
+        print("  Channel n is net Po<n-1> on the power-switch headers. These are")
+        print("  LOW-SIDE switches: a load connects between +12 V and the Po pin,")
+        print("  and 'on' sinks the pin to GND. With no load attached, expect:")
+        print("    on  -> ~0 V at the pin (hard low)")
+        print("    off -> floating, drifting high (open-load diagnostic current)")
+        # One channel per driver chip (S1..S4 handle 4 channels each), plus
+        # channel 16 to cover the last PWM register.
+        for ch in (1, 5, 9, 13, 16):
+            net = f"Po{ch - 1}"
             self.board.io.set_switch(ch, 1.0)
-            self.confirm(f"switch {ch} on", f"Switch output {ch} reads ~12 V?")
+            self.confirm(f"switch {ch} on", f"{net} reads ~0 V (pulled to GND)?")
             self.board.io.set_switch(ch, 0.0)
-            self.confirm(f"switch {ch} off", f"Switch output {ch} reads ~0 V?")
+            self.confirm(f"switch {ch} off", f"{net} no longer pulled low?")
 
     def section_signals(self) -> None:
         self.banner("Signal engine")
@@ -171,6 +274,17 @@ class Checkout:
         print(f"  Recorded {len(data)} samples, first 5: "
               f"{[f'{v:.3f}' for v in data[:5]]}")
         self.auto("signal ADC record", len(data) == 200)
+
+        # Protocol stress: the largest possible upload (~50 kB line) and
+        # readback, exercising the firmware's line buffer on the real link.
+        print("  Uploading a full-length 2000-step signal and reading it back...")
+        values = [(i % 331) / 100.0 for i in range(2000)]
+        self.board.signals.configure(0, SignalMode.DAC, option=1)
+        self.board.signals.load(0, values, [1.0] * 2000)
+        data = self.board.signals.read(0)
+        ok = (len(data) == 2000
+              and max(abs(a - b) for a, b in zip(data, values)) < 1e-4)
+        self.auto("2000-step upload/readback", ok, f"{len(data)} steps")
 
     def section_led(self, channel: int) -> None:
         self.banner(f"LED board (channel {channel})")
@@ -221,7 +335,25 @@ class Checkout:
             self.board.magnet.enable(False)
 
     def section_imaging(self) -> None:
-        self.banner("Imaging (camera trigger)")
+        self.banner("Imaging (camera interface)")
+        # Camera inputs first: drive each from D_OUT_1 (they sit behind 5 V
+        # level shifters) and read them back over the protocol.
+        camera_inputs = [
+            ("camera trigger-ready (Tr0)", lambda ci: ci.trigger_ready),
+            ("camera reading (RO)", lambda ci: ci.reading),
+            ("camera LED1 gate", lambda ci: ci.led[0]),
+            ("camera LED2 gate", lambda ci: ci.led[1]),
+            ("camera LED3 gate", lambda ci: ci.led[2]),
+            ("camera LED4 gate", lambda ci: ci.led[3]),
+        ]
+        for name, getter in camera_inputs:
+            self.instruct(f"Jumper D_OUT_1 to the {name} input")
+            self.board.io.write_do(1, True)
+            high = getter(self.board.imaging.read_camera_inputs())
+            self.board.io.write_do(1, False)
+            low = getter(self.board.imaging.read_camera_inputs())
+            self.auto(name, high and not low, f"high={high}, low={low}")
+
         self.board.imaging.set_sync_mode(1)
         self.board.imaging.configure([Frame(exposure_ms=100)])
         print("  Starting a 1-frame sequence (camera trigger pin 32, TrI)...")

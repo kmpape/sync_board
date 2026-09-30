@@ -11,6 +11,8 @@ src/            firmware (PlatformIO, Arduino framework)
 syncboard/      Python client package
 tests/          unit tests for the client (no hardware needed)
 hwtest/         interactive hardware checkout script (bench + scope)
+docs/bringup/   per-board bench bring-up procedures
+schematics/     board schematics (Altium .SchDoc)
 ```
 
 ## Firmware
@@ -105,6 +107,7 @@ one. Channels: DO/DI 1–4, ADC/DAC/LED 1–8 (DAC 0 = all), GPIO by label
 | `loadSignalUniform` | index, n, intervalMs | — |
 | `startSignal` / `stopSignal` | index | — |
 | `readSignal` | index | n, values… |
+| `readCameraInputs` | — | trigger-ready, reading, led1..4 (0/1 each) |
 | `setSyncMode` | mode 0–2, ledByCamera | — |
 | `setupImaging` | 4 × (active, led, exposureMs) | — |
 | `startImaging` | numFrames | — (sanity-checked against config) |
@@ -206,10 +209,19 @@ python hwtest/checkout.py                  # core sections (IO, DAC/ADC, signals
 python hwtest/checkout.py --led 1          # also test LED channel 1
 python hwtest/checkout.py --magnet         # also test the magnet board
 python hwtest/checkout.py --sections do,dac
+python hwtest/led_board.py                 # LED board through a SyncBoard (see docs/bringup)
 ```
 
-The script drives each subsystem, tells you what to probe and what to
-expect, and prints a pass/fail summary.
+The scripts drive each subsystem, tell you what to probe and what to
+expect, and print a pass/fail summary.
+
+### Bringing up a newly built board
+
+For a freshly soldered board, work up to the full checkout in stages
+following the per-board guides in [`docs/bringup/`](docs/bringup/):
+
+- [`docs/bringup/syncboard.md`](docs/bringup/syncboard.md) — SyncBoard
+- [`docs/bringup/led-board.md`](docs/bringup/led-board.md) — LED board
 
 ## Migrating from v1 (pre-rewrite)
 
