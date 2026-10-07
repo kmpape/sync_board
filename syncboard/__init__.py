@@ -3,14 +3,19 @@
 import logging
 
 from syncboard.board import (
+    AdcReading,
     CameraInputs,
     FeedbackMode,
     Frame,
     LedMeasurement,
     LedSetup,
+    ScreenerChips,
+    ScreenerEnable,
+    ScreenerRef,
     SignalMode,
     Status,
     SyncBoard,
+    pt1000_celsius,
 )
 from syncboard.protocol import (
     CommandError,
@@ -26,6 +31,11 @@ __all__ = [
     "SyncBoard",
     "SignalMode",
     "FeedbackMode",
+    "ScreenerChips",
+    "ScreenerEnable",
+    "ScreenerRef",
+    "AdcReading",
+    "pt1000_celsius",
     "Frame",
     "CameraInputs",
     "Status",

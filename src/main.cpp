@@ -13,6 +13,7 @@
 #include "Magnet.h"
 #include "Pins.h"
 #include "Protocol.h"
+#include "Screener.h"
 #include "Signals.h"
 #include "State.h"
 #include "System.h"
@@ -53,6 +54,15 @@ bool requireLed() {
   return true;
 }
 
+bool requireScreener() {
+  if (!requireEnabled()) return false;
+  if (!gScreenerAttached) {
+    fault("screener board not attached (send attachScreener/1 before enabling)");
+    return false;
+  }
+  return true;
+}
+
 // ---- System ----------------------------------------------------------------
 
 void cmdPing() {
@@ -69,6 +79,7 @@ void cmdStatus() {
   protocol::addInt(gLedAttached ? 1 : 0);
   protocol::addInt(gMagnetAttached ? 1 : 0);
   protocol::addInt(imaging::syncMode());
+  protocol::addInt(gScreenerAttached ? 1 : 0);
   protocol::endReply();
 }
 
@@ -103,6 +114,12 @@ void cmdAttachMagnet() {
   const bool present = argBool(0);
   if (faultPending() || !requireDisabled()) return;
   gMagnetAttached = present;
+}
+
+void cmdAttachScreener() {
+  const bool present = argBool(0);
+  if (faultPending() || !requireDisabled()) return;
+  gScreenerAttached = present;
 }
 
 void cmdScanI2c() {
@@ -148,6 +165,10 @@ void cmdSetupGpio() {
   if (faultPending() || !requireDisabled()) return;
   if (gMagnetAttached && enabled && (label == 29 || label == 30 || label == 5 || label == 6)) {
     fault("GPIO29/30 carry the magnet board's enable/select lines while it is attached");
+    return;
+  }
+  if (gScreenerAttached && enabled && (label == 31 || label == 7)) {
+    fault("GPIO31 carries the screener board's RF switch line while it is attached");
     return;
   }
   const int index = io::gpioIndexFromLabel(label);
@@ -350,6 +371,105 @@ void cmdSetMagnetDac() {
   magnet::setDacVolts(ch, volts);
 }
 
+// ---- Screener board --------------------------------------------------------
+
+void cmdSetupScreener() {
+  if (!requireScreener()) return;
+  screener::setup();
+  if (faultPending()) return;
+  protocol::beginOk();
+  protocol::addInt(screener::pwmFound() ? 1 : 0);
+  protocol::addInt(screener::rfAdcFound() ? 1 : 0);
+  protocol::addInt(screener::adcFound() ? 1 : 0);
+  protocol::endReply();
+}
+
+void cmdSetScreenerSwitch() {
+  const int ch = argInt(0);
+  const float duty = argFloat(1);
+  if (faultPending() || !requireScreener()) return;
+  screener::setSwitch(ch, duty);
+}
+
+void cmdSetScreenerEnable() {
+  const int which = argInt(0);
+  const bool on = argBool(1);
+  if (faultPending() || !requireScreener()) return;
+  // Range-check before the cast: enum conversion would wrap mod 256.
+  if (which < 0 || which > (int)screener::Enable::kSensors) {
+    fault("screener enable %d not recognised (0 rf, 1 rf spare, 2 fluxgate, 3 sensors)", which);
+    return;
+  }
+  screener::setEnable((screener::Enable)which, on);
+}
+
+void cmdSetScreenerPwm() {
+  const int ch = argInt(0);
+  const float duty = argFloat(1);
+  if (faultPending() || !requireScreener()) return;
+  screener::setPwm(ch, duty);
+}
+
+void cmdSetScreenerRfSwitch() {
+  const bool on = argBool(0);
+  if (faultPending() || !requireScreener()) return;
+  screener::setRfSwitch(on);
+}
+
+void cmdReadScreenerRf() {
+  const int ch = argInt(0);
+  if (faultPending() || !requireScreener()) return;
+  const float volts = screener::readRfVolts(ch);
+  if (faultPending()) return;
+  protocol::beginOk();
+  protocol::addFloat(volts);
+  protocol::endReply();
+}
+
+void cmdReadScreenerAdc() {
+  const int ainp = argInt(0);
+  const int ainn = argInt(1);
+  const int ref = argInt(2);
+  const int gain = argInt(3);
+  if (faultPending() || !requireScreener()) return;
+  if (ref < 0 || ref > (int)screener::Ref::kInternal) {
+    fault("ADC reference %d not recognised (0 RTD, 1 Hall, 2 internal)", ref);
+    return;
+  }
+  int32_t code;
+  const float ratio = screener::readAdcRatio(ainp, ainn, (screener::Ref)ref, gain, code);
+  if (faultPending()) return;
+  protocol::beginOk();
+  protocol::addInt(code);
+  protocol::addFloat(ratio);
+  protocol::endReply();
+}
+
+void cmdReadScreenerRtd() {
+  const int ch = argInt(0);
+  const bool polarityHigh = argBool(1);
+  if (faultPending() || !requireScreener()) return;
+  const float ohms = screener::readRtdOhms(ch, polarityHigh);
+  if (faultPending()) return;
+  protocol::beginOk();
+  protocol::addFloat(ohms);
+  protocol::endReply();
+}
+
+void cmdReadScreenerSupply() {
+  const int which = argInt(0);  // 0 = AVDD (5 V analog), 1 = DVDD (3.3 V digital)
+  if (faultPending() || !requireScreener()) return;
+  if (which != 0 && which != 1) {
+    fault("supply %d not recognised (0 = AVDD, 1 = DVDD)", which);
+    return;
+  }
+  const float volts = screener::readSupplyVolts(which == 0);
+  if (faultPending()) return;
+  protocol::beginOk();
+  protocol::addFloat(volts);
+  protocol::endReply();
+}
+
 // ---- Signals ---------------------------------------------------------------
 
 void cmdSetupSignal() {
@@ -490,6 +610,7 @@ constexpr CommandEntry kCommands[] = {
     {"factoryReset", cmdFactoryReset},
     {"attachLed", cmdAttachLed},
     {"attachMagnet", cmdAttachMagnet},
+    {"attachScreener", cmdAttachScreener},
     {"scanI2c", cmdScanI2c},
     {"readDi", cmdReadDi},
     {"writeDo", cmdWriteDo},
@@ -518,6 +639,15 @@ constexpr CommandEntry kCommands[] = {
     {"readHall", cmdReadHall},
     {"readMagnetAdc", cmdReadMagnetAdc},
     {"setMagnetDac", cmdSetMagnetDac},
+    {"setupScreener", cmdSetupScreener},
+    {"setScreenerSwitch", cmdSetScreenerSwitch},
+    {"setScreenerEnable", cmdSetScreenerEnable},
+    {"setScreenerPwm", cmdSetScreenerPwm},
+    {"setScreenerRfSwitch", cmdSetScreenerRfSwitch},
+    {"readScreenerRf", cmdReadScreenerRf},
+    {"readScreenerAdc", cmdReadScreenerAdc},
+    {"readScreenerRtd", cmdReadScreenerRtd},
+    {"readScreenerSupply", cmdReadScreenerSupply},
     {"setupSignal", cmdSetupSignal},
     {"loadSignal", cmdLoadSignal},
     {"loadSignalUniform", cmdLoadSignalUniform},

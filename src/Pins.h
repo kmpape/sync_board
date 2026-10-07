@@ -18,7 +18,7 @@ constexpr int kSpiCs0 = 10;   // chip select for the on-board AD5668 DAC
 constexpr int kSpiMosi = 11;
 constexpr int kSpiMiso = 12;
 constexpr int kSpiSck = 13;
-constexpr int kSpiCs1 = 0;    // goes to expansion headers / display counter
+constexpr int kSpiCs1 = 0;    // expansion headers (screener board ADC) / display counter jumper
 
 // I2C (bus 0). Shared with expansion/LED/magnet boards.
 constexpr int kI2cSda = 18;

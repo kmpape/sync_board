@@ -2,7 +2,15 @@
 
 import pytest
 
-from syncboard.board import Frame, SignalMode, SyncBoard
+from syncboard import CommandError
+from syncboard.board import (
+    Frame,
+    ScreenerEnable,
+    ScreenerRef,
+    SignalMode,
+    SyncBoard,
+    pt1000_celsius,
+)
 
 
 class StubTransport:
@@ -21,8 +29,9 @@ class StubTransport:
 @pytest.fixture
 def board():
     return SyncBoard(StubTransport({
-        "status": ("1", "1", "0", "1"),
+        "status": ("1", "1", "0", "1", "1"),
         "activity": ("0", "0"),  # nothing running
+        "setupScreener": ("1", "1", "0"),  # PCA9685 + ADS7828 found, ADS124S08 missing
     }))
 
 
@@ -31,6 +40,7 @@ def test_status_parsing(board):
     assert status.enabled and status.led_board_attached
     assert not status.magnet_board_attached
     assert status.sync_mode == 1
+    assert status.screener_board_attached
 
 
 def test_signal_load_interleaves_values_and_delays(board):
@@ -94,3 +104,67 @@ def test_gpio_direction_validation(board):
         board.io.setup_gpio(25, direction="sideways")
     board.io.setup_gpio(25, direction="output")
     assert board._t.requests[-1] == ("setupGpio", (25, True, False))
+
+
+def test_initialise_attaches_and_sets_up_the_screener(board):
+    board.initialise(screener_board=True)
+    assert board._t.requests == [
+        ("disable", ()), ("attachLed", (False,)), ("attachMagnet", (False,)),
+        ("attachScreener", (True,)), ("enable", ()), ("setupScreener", ()),
+    ]
+
+
+def test_screener_setup_reports_optional_chips(board):
+    chips = board.screener.setup()
+    assert chips.pca9685 and chips.ads7828 and not chips.ads124s08
+
+
+def test_screener_all_off_attempts_every_step(board):
+    def request(command, *args, timeout=None):
+        board._t.requests.append((command, args))
+        if command == "setScreenerPwm":
+            raise CommandError(command, "the screener's PCA9685 (0x51) did not answer at setup")
+        return ()
+    board._t.request = request
+    with pytest.raises(CommandError, match="PCA9685"):
+        board.screener.all_off()
+    assert [c for c, _ in board._t.requests] == ["setScreenerPwm", "setScreenerRfSwitch"]
+
+
+def test_screener_outputs_send_wire_values(board):
+    board.screener.set_switch(3, 0.5)
+    board.screener.set_enable(ScreenerEnable.SENSORS)
+    board.screener.set_rf_switch(True)
+    board.screener.all_off()
+    assert board._t.requests == [
+        ("setScreenerSwitch", (3, 0.5)),
+        ("setScreenerEnable", (3, True)),
+        ("setScreenerRfSwitch", (True,)),
+        ("setScreenerPwm", (0, 0.0)),
+        ("setScreenerRfSwitch", (False,)),
+    ]
+
+
+def test_screener_adc_reading_and_presets(board):
+    board._t.replies["readScreenerAdc"] = ("4194304", "0.25")
+    reading = board.screener.read_adc(2, 3)
+    assert (reading.code, reading.ratio) == (4194304, 0.25)
+    assert board._t.requests[-1] == ("readScreenerAdc", (2, 3, 2, 1))
+    assert board.screener.read_fluxgate() == pytest.approx(0.625)
+    board.screener.read_hall()
+    assert board._t.requests[-1] == ("readScreenerAdc", (4, 5, int(ScreenerRef.HALL), 1))
+    # RH node = (sensor + 2.5) / 2, read against 2.5 V: 0.625 V -> 3.75 V at the sensor.
+    assert board.screener.read_humidity() == pytest.approx(3.75)
+    assert board._t.requests[-1] == ("readScreenerAdc", (9, 5, 2, 1))
+
+
+def test_screener_rtd_request(board):
+    board._t.replies["readScreenerRtd"] = ("1085.2",)
+    assert board.screener.read_rtd(7, polarity=1) == pytest.approx(1085.2)
+    assert board._t.requests[-1] == ("readScreenerRtd", (7, True))
+
+
+def test_pt1000_celsius():
+    assert pt1000_celsius(1000.0) == pytest.approx(0.0, abs=1e-9)
+    assert pt1000_celsius(1385.055) == pytest.approx(100.0, abs=1e-3)
+    assert pt1000_celsius(921.599) == pytest.approx(-20.0, abs=1e-2)
