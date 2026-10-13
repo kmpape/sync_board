@@ -2,16 +2,29 @@
 
 import pytest
 
-from syncboard.board import Frame, SignalMode, SyncBoard
+from syncboard import CommandError
+from syncboard.board import (
+    AirReference,
+    FieldSensorApi,
+    Frame,
+    ScreenerEnable,
+    SignalMode,
+    SyncBoard,
+    pt1000_celsius,
+    sht40_celsius,
+    sht40_rh_percent,
+)
 
 
 class StubTransport:
     def __init__(self, replies=None):
         self.requests = []
+        self.timeouts = []
         self.replies = dict(replies or {})
 
     def request(self, command, *args, timeout=None):
         self.requests.append((command, args))
+        self.timeouts.append(timeout)
         return self.replies.get(command, ())
 
     def close(self):
@@ -21,8 +34,9 @@ class StubTransport:
 @pytest.fixture
 def board():
     return SyncBoard(StubTransport({
-        "status": ("1", "1", "0", "1"),
+        "status": ("1", "1", "0", "1", "1"),
         "activity": ("0", "0"),  # nothing running
+        "setupScreener": ("1", "1", "0"),  # PCA9685 + ADS7828 found, ADS124S08 missing
     }))
 
 
@@ -31,6 +45,7 @@ def test_status_parsing(board):
     assert status.enabled and status.led_board_attached
     assert not status.magnet_board_attached
     assert status.sync_mode == 1
+    assert status.screener_board_attached
 
 
 def test_signal_load_interleaves_values_and_delays(board):
@@ -94,3 +109,129 @@ def test_gpio_direction_validation(board):
         board.io.setup_gpio(25, direction="sideways")
     board.io.setup_gpio(25, direction="output")
     assert board._t.requests[-1] == ("setupGpio", (25, True, False))
+
+
+def test_initialise_attaches_and_sets_up_the_screener(board):
+    board.initialise(screener_board=True)
+    assert board._t.requests == [
+        ("disable", ()), ("attachLed", (False,)), ("attachMagnet", (False,)),
+        ("attachScreener", (True,)), ("enable", ()), ("setupScreener", ()),
+    ]
+
+
+def test_screener_setup_reports_optional_chips(board):
+    chips = board.screener.setup()
+    assert chips.pca9685 and chips.ads7828 and not chips.ads124s08
+
+
+def test_screener_all_off_attempts_every_step(board):
+    def request(command, *args, timeout=None):
+        board._t.requests.append((command, args))
+        if command == "setScreenerPwm":
+            raise CommandError(command, "the screener's PCA9685 (0x51) did not answer at setup")
+        return ()
+    board._t.request = request
+    with pytest.raises(CommandError, match="PCA9685"):
+        board.screener.all_off()
+    assert [c for c, _ in board._t.requests] == ["setScreenerPwm", "setScreenerRfSwitch"]
+
+
+def test_screener_outputs_send_wire_values(board):
+    board.screener.set_switch(3, 0.5)
+    board.screener.set_enable(ScreenerEnable.SENSORS)
+    board.screener.set_rf_switch(True)
+    board.screener.all_off()
+    assert board._t.requests == [
+        ("setScreenerSwitch", (3, 0.5)),
+        ("setScreenerEnable", (3, True)),
+        ("setScreenerRfSwitch", (True,)),
+        ("setScreenerPwm", (0, 0.0)),
+        ("setScreenerRfSwitch", (False,)),
+    ]
+
+
+def test_screener_adc_reading(board):
+    board._t.replies["readScreenerAdc"] = ("4194304", "0.25")
+    reading = board.screener.read_adc(2, 3)
+    assert (reading.code, reading.ratio) == (4194304, 0.25)
+    assert board._t.requests[-1] == ("readScreenerAdc", (2, 3, 2, 1))
+    assert board.screener.read_adc_volts(2, 3) == pytest.approx(0.625)
+
+
+def test_fluxgate_readings(board):
+    field = board.screener.field_sensor
+    board._t.replies["readFieldFluxgate"] = ("0.366", "0.3660", "0.366")
+    assert field.read_fluxgate_volts(3) == pytest.approx([0.366] * 3)
+    assert board._t.requests[-1] == ("readFieldFluxgate", (3,))  # firmware's default settle
+    assert field.read_fluxgate_mt(3, settle_ms=40) == pytest.approx(0.5)  # 0.732 V/mT
+    assert board._t.requests[-1] == ("readFieldFluxgate", (3, 40))
+    # Three conversions plus the REFOUT check, after the settle.
+    assert board._t.timeouts[-1] == pytest.approx(2.0 + 0.04 + 0.4)
+    board._t.replies["readFieldFluxgate"] = ("1.2", "1.58")
+    with pytest.raises(ValueError, match="rail"):
+        field.read_fluxgate_mt(2)
+
+
+def test_hall_readings(board):
+    field = board.screener.field_sensor
+    board._t.replies["readFieldHall"] = ("0.55", "0.55")
+    assert field.read_hall_mt(2) == pytest.approx(10.0)  # 0.05 of 5 V at 25 mV/mT
+    assert board._t.requests[-1] == ("readFieldHall", (2,))
+    board._t.replies["readFieldHall"] = ("0.95",)
+    with pytest.raises(ValueError, match="linear range"):
+        field.read_hall_mt()
+    board._t.replies["readFieldSupply"] = ("4.98",)
+    assert field.read_supply(settle_ms=0) == pytest.approx(4.98)
+    assert board._t.requests[-1] == ("readFieldSupply", (0,))
+
+
+def test_field_sensor_constants_match_the_datasheets():
+    assert FieldSensorApi.FLUXGATE_V_PER_MT == pytest.approx(0.732)
+    assert FieldSensorApi.HALL_MT_PER_RATIO == pytest.approx(200.0)
+
+
+def test_humidity_reading_references(board):
+    air = board.screener.air_sensor
+    board._t.replies["readAirHumidity"] = ("0.5", "0.4")
+    reading = air.read_humidity()
+    assert board._t.requests[-1] == ("readAirHumidity", (0,))
+    assert reading.relative_humidity == pytest.approx(50.0)
+    assert reading.temperature_c == pytest.approx(-66.875 + 218.75 * 0.4)
+    # OFFSET replies volts relative to 2V5_Offset: 0 V is half the 5 V supply.
+    board._t.replies["readAirHumidity"] = ("0.0", "-0.5")
+    reading = air.read_humidity(AirReference.OFFSET, settle_ms=500)
+    assert board._t.requests[-1] == ("readAirHumidity", (1, 500))
+    assert (reading.rh_fraction, reading.t_fraction) == pytest.approx((0.5, 0.4))
+    assert reading.relative_humidity == pytest.approx(50.0)
+
+
+def test_sensor_rtds_use_their_channels(board):
+    board._t.replies["readScreenerRtd"] = ("1000.0",)
+    assert board.screener.field_sensor.read_temperature_c() == pytest.approx(0.0, abs=1e-9)
+    assert board._t.requests[-1] == ("readScreenerRtd", (7,))
+    board.screener.air_sensor.read_rtd_ohms(polarity=1)
+    assert board._t.requests[-1] == ("readScreenerRtd", (8, True))
+
+
+def test_sht40_transfer_functions():
+    # 10-90 % of the supply spans 0-100 %RH and -45-130 C (datasheet eqs. 1, 2).
+    assert sht40_rh_percent(0.1) == pytest.approx(0.0)
+    assert sht40_rh_percent(0.9) == pytest.approx(100.0)
+    assert sht40_celsius(0.1) == pytest.approx(-45.0)
+    assert sht40_celsius(0.9) == pytest.approx(130.0)
+
+
+def test_screener_rtd_request(board):
+    board._t.replies["readScreenerRtd"] = ("1085.2",)
+    assert board.screener.read_rtd(7) == pytest.approx(1085.2)
+    assert board._t.requests[-1] == ("readScreenerRtd", (7,))
+    assert board.screener.read_rtd(7, polarity=1) == pytest.approx(1085.2)
+    assert board._t.requests[-1] == ("readScreenerRtd", (7, True))
+    board.screener.read_rtd(7, polarity=0)
+    assert board._t.requests[-1] == ("readScreenerRtd", (7, False))
+
+
+def test_pt1000_celsius():
+    assert pt1000_celsius(1000.0) == pytest.approx(0.0, abs=1e-9)
+    assert pt1000_celsius(1385.055) == pytest.approx(100.0, abs=1e-3)
+    assert pt1000_celsius(921.599) == pytest.approx(-20.0, abs=1e-2)

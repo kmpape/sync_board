@@ -6,12 +6,14 @@
 #include "Io.h"
 #include "Leds.h"
 #include "Magnet.h"
+#include "Screener.h"
 #include "Signals.h"
 #include "State.h"
 
 bool gSystemEnabled = false;
 bool gLedAttached = false;
 bool gMagnetAttached = false;
+bool gScreenerAttached = false;
 
 namespace system_ {
 
@@ -25,6 +27,7 @@ void teardownToSafeState() {
   io::configure(false);
   leds::reset(false);
   magnet::invalidateSetup();  // its control pins were just torn down
+  screener::invalidateSetup();
   // Let attached boards notice the heartbeat has stopped and power down.
   delay(1000);
   gSystemEnabled = false;

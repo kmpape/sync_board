@@ -7,9 +7,10 @@
 // running). Only System::setEnabled() may change it.
 extern bool gSystemEnabled;
 
-// True when the operator has declared the LED / magnet expansion boards
-// present (attachLed / attachMagnet commands).
+// True when the operator has declared the LED / magnet / screener expansion
+// boards present (attachLed / attachMagnet / attachScreener commands).
 extern bool gLedAttached;
 extern bool gMagnetAttached;
+extern bool gScreenerAttached;
 
-constexpr const char* kFirmwareVersion = "2.0.0";
+constexpr const char* kFirmwareVersion = "2.2.0";

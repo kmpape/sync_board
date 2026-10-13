@@ -10,9 +10,10 @@ signal sequences, and general bench IO.
 src/            firmware (PlatformIO, Arduino framework)
 syncboard/      Python client package
 tests/          unit tests for the client (no hardware needed)
-hwtest/         interactive hardware checkout script (bench + scope)
+hwtest/         interactive hardware checkout scripts (bench + scope)
 docs/bringup/   per-board bench bring-up procedures
 schematics/     board schematics (Altium .SchDoc)
+hardware/       Altium schematics + PCB (SyncBoard, ScreenerMobo)
 ```
 
 ## Firmware
@@ -36,6 +37,9 @@ Firmware modules:
 | `Chips`       | register-level drivers (PCA9685, ADS7828, AD5668, AD5669) |
 | `Leds`        | LED board: calibration, levels, timed switching, measurement |
 | `Magnet`      | magnet board: current/field control, Hall sensors, calibration |
+| `Screener`    | screener board (Expansion 2): power switches, rail enables, RF detectors, RTDs, sensor ADC |
+| `FieldSensor` | FieldSensor flex on the screener's Con_S: fluxgate, Hall sensor (powered per reading) |
+| `AirSensor`   | AirSensor board on the screener's Con_S: humidity/temperature sensor (powered per reading) |
 | `Signals`     | timed sequences (AWG output, ADC recording, conductor/slave sync) |
 | `Imaging`     | camera-synchronised image sequences |
 | `Calibration` | versioned EEPROM storage for LED calibrations |
@@ -62,19 +66,21 @@ The protocol is debuggable by hand: connect a serial monitor and type
 ### Command reference
 
 Unless noted, commands reply with a bare `ok`. Most require an enabled
-system; `attachLed`, `attachMagnet` and `setupGpio` require a *disabled*
-one. Channels: DO/DI 1–4, ADC/DAC/LED 1–8 (DAC 0 = all), GPIO by label
-(13, 25–32), switches 1–16 (0 = all off), Hall sensors 0–2.
+system; `attachLed`, `attachMagnet`, `attachScreener` and `setupGpio`
+require a *disabled* one. Channels: DO/DI 1–4, ADC/DAC/LED 1–8 (DAC 0 =
+all), GPIO by label (13, 25–32), switches 1–16 (0 = all off), Hall sensors
+0–2; screener switches 1–7 (0 = all off), RF ADC 1–8, RTDs 1–8, ADS124S08
+inputs 0–11 (12 = AINCOM).
 
 | Command | Arguments | Ok reply values |
 |---|---|---|
 | `ping` | — | `syncboard`, version, uptime ms |
-| `status` | — | enabled, ledAttached, magnetAttached, syncMode |
+| `status` | — | enabled, ledAttached, magnetAttached, syncMode, screenerAttached |
 | `activity` | — | active-signal bitmask, imaging running |
 | `enable` / `disable` | — | — (disable blocks ~1 s) |
 | `resetConfig` | — | — |
 | `factoryReset` | — | — (erases EEPROM/calibrations) |
-| `attachLed` / `attachMagnet` | present | — |
+| `attachLed` / `attachMagnet` / `attachScreener` | present | — |
 | `scanI2c` | — | count, addresses… |
 | `readDi` | channel | 0/1 |
 | `writeDo` | channel, high | — |
@@ -102,6 +108,19 @@ one. Channels: DO/DI 1–4, ADC/DAC/LED 1–8 (DAC 0 = all), GPIO by label
 | `readHall` | hallId | mT |
 | `readMagnetAdc` | channel | volts |
 | `setMagnetDac` | channel, volts | — (raw; bring-up use) |
+| `setupScreener` | — | PCA9685, ADS7828, ADS124S08 found (0/1 each; re-run after every enable) |
+| `setScreenerSwitch` | channel, duty 0–1 | — (~200 Hz PWM) |
+| `setScreenerEnable` | which 0 rf, 1 rf spare, 2 fluxgate, 3 sensors; on | — |
+| `setScreenerPwm` | channel 1–16 (0 = all, off only), duty | — (raw; bring-up use) |
+| `setScreenerRfSwitch` | on | — (GPIO31) |
+| `readScreenerRf` | channel | volts (0–1.8 V) |
+| `readScreenerAdc` | ainp, ainn, ref 0 RTD/1 Hall/2 internal, gain 1–128 | code, Vin/Vref (blocks ~80 ms) |
+| `readScreenerRtd` | channel[, polarity] | ohms: chopped mean of 6 (blocks ~1.1 s), or one conversion at that polarity (~190 ms); powers the sensors rail for the reading |
+| `readScreenerSupply` | 0 AVDD / 1 DVDD | volts |
+| `readFieldFluxgate` | count 1–16[, settleMs] | count × fluxgate VOUT − REFOUT volts; powers the fluxgate rail for the reading (default settle 500 ms) |
+| `readFieldHall` | count 1–16[, settleMs] | count × Hall output / supply ratio; powers the sensors rail (default settle 20 ms) |
+| `readFieldSupply` | [settleMs] | the flex 5 V at the Hall sensor, volts |
+| `readAirHumidity` | reference 0 flex supply / 1 offset[, settleMs] | RH, T outputs: fractions of the supply (0) or volts from 2V5_Offset (1); powers the sensors rail (default settle 300 ms) |
 | `setupSignal` | index, mode, option, repeat, isSlave | — (invalidates loaded data) |
 | `loadSignal` | index, n, value₀, delayMs₀, … | — (negative delay ends sequence) |
 | `loadSignalUniform` | index, n, intervalMs | — |
@@ -163,6 +182,14 @@ with SyncBoard.connect() as sb:
     sb.signals.load(0, values=[3.0, 0.0], delays_ms=[5, 5])
     sb.signals.start(0)
 
+    # Screener board in Expansion 2 (initialise(..., screener_board=True))
+    #   sb.screener.set_switch(3, 1.0)                 # power switch 3 on
+    #   sb.screener.set_enable(ScreenerEnable.SENSORS) # hold the sensors rail on (displays)
+    #   ohms = sb.screener.read_rtd(1)                 # 4-wire, ratiometric, chopped
+    #   celsius = pt1000_celsius(ohms)
+    #   mt = sb.screener.field_sensor.read_fluxgate_mt()  # fluxgate on only for the reading
+    #   air = sb.screener.air_sensor.read_humidity()      # AirReading(relative_humidity, ...)
+
     # A two-frame image sequence, host-triggered (sync mode 1)
     sb.imaging.set_sync_mode(1)
     sb.imaging.configure([Frame(led=2, exposure_ms=10), Frame(led=4, exposure_ms=10)])
@@ -210,6 +237,8 @@ python hwtest/checkout.py --led 1          # also test LED channel 1
 python hwtest/checkout.py --magnet         # also test the magnet board
 python hwtest/checkout.py --sections do,dac
 python hwtest/led_board.py                 # LED board through a SyncBoard (see docs/bringup)
+python hwtest/screener_leds.py             # screener board: light its five top-edge indicators
+python hwtest/screener_board.py            # screener board: interactive test menu
 ```
 
 The scripts drive each subsystem, tell you what to probe and what to
@@ -222,6 +251,8 @@ following the per-board guides in [`docs/bringup/`](docs/bringup/):
 
 - [`docs/bringup/syncboard.md`](docs/bringup/syncboard.md) — SyncBoard
 - [`docs/bringup/led-board.md`](docs/bringup/led-board.md) — LED board
+- [`docs/bringup/screener-board.md`](docs/bringup/screener-board.md) — screener board
+- [`docs/bringup/sensor-boards.md`](docs/bringup/sensor-boards.md) — AirSensor and FieldSensor
 
 ## Migrating from v1 (pre-rewrite)
 

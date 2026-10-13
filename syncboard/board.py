@@ -17,11 +17,14 @@ executed the command. Firmware-side rejections raise
 from __future__ import annotations
 
 import logging
+import math
+import statistics
 import time
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Sequence
 
+from syncboard.protocol import SyncBoardError
 from syncboard.transport import Transport
 
 logger = logging.getLogger("syncboard")
@@ -48,12 +51,33 @@ class FeedbackMode(IntEnum):
     OPTICAL = 1
 
 
+# Wire values shared with the firmware (src/Screener.h).
+class ScreenerEnable(IntEnum):
+    RF = 0          # AD8318 detectors on RF inputs 1-3 (Con1-Con3)
+    RF_SPARE = 1    # AD8318 detector on the spare RF input (Con4)
+    FLUXGATE = 2    # 3.3 V fluxgate supply on the sensor flex
+    SENSORS = 3     # 5 V flex-sensor and LED-display rails, RTD multiplexers
+
+
+class ScreenerRef(IntEnum):
+    RTD = 0         # REFP0/REFN0: voltage across the 4.7 kOhm RTD reference
+    HALL = 1        # AIN6/AIN7: the Hall sensor's conditioned excitation
+    INTERNAL = 2    # 2.5 V internal reference
+
+
+# Wire values shared with the firmware (src/AirSensor.h).
+class AirReference(IntEnum):
+    FLEX_SUPPLY = 0  # ratiometric to the flex 5 V as the FieldSensor senses it
+    OFFSET = 1       # against 2V5_Offset, assuming the nominal supply (no FieldSensor needed)
+
+
 @dataclass(frozen=True)
 class Status:
     enabled: bool
     led_board_attached: bool
     magnet_board_attached: bool
     sync_mode: int
+    screener_board_attached: bool
 
 
 @dataclass(frozen=True)
@@ -80,6 +104,34 @@ class CameraInputs:
 
 
 @dataclass(frozen=True)
+class ScreenerChips:
+    """Which chips answered at screener-board setup. Each is optional: the
+    methods that need a missing one raise, the rest keep working."""
+
+    pca9685: bool     # switches, enables, RTD mux + polarity
+    ads7828: bool     # RF detector ADC
+    ads124s08: bool   # SPI ADC: RTDs, Hall, fluxgate, humidity
+
+
+@dataclass(frozen=True)
+class AirReading:
+    """One reading of the AirSensor's SHT40I humidity and temperature sensor."""
+
+    relative_humidity: float  # %RH, not clipped to 0..100
+    temperature_c: float
+    rh_fraction: float        # the RH and T outputs as fractions of the
+    t_fraction: float         # sensor's supply (0.1..0.9 in range)
+
+
+@dataclass(frozen=True)
+class AdcReading:
+    """One screener-board ADS124S08 conversion."""
+
+    code: int      # raw signed 24-bit result
+    ratio: float   # V_in / V_ref, -1..1
+
+
+@dataclass(frozen=True)
 class Frame:
     """One frame of an image sequence.
 
@@ -94,7 +146,8 @@ class Frame:
 
 class SyncBoard:
     """Owns the transport and exposes the board through per-subsystem APIs:
-    :attr:`leds`, :attr:`magnet`, :attr:`signals`, :attr:`io`, :attr:`imaging`.
+    :attr:`leds`, :attr:`magnet`, :attr:`screener`, :attr:`signals`,
+    :attr:`io`, :attr:`imaging`.
     """
 
     ENABLE_TIMEOUT_S = 5.0  # disable blocks ~1 s in firmware
@@ -103,6 +156,7 @@ class SyncBoard:
         self._t = transport
         self.leds = LedApi(transport)
         self.magnet = MagnetApi(transport)
+        self.screener = ScreenerApi(transport)
         self.signals = SignalApi(transport)
         self.io = IoApi(transport)
         self.imaging = ImagingApi(transport)
@@ -154,18 +208,23 @@ class SyncBoard:
             led_board_attached=fields[1] == "1",
             magnet_board_attached=fields[2] == "1",
             sync_mode=int(fields[3]),
+            screener_board_attached=fields[4] == "1",
         )
 
-    def initialise(self, led_board: bool = False, magnet_board: bool = False) -> None:
+    def initialise(self, led_board: bool = False, magnet_board: bool = False,
+                   screener_board: bool = False) -> None:
         """Convenience bring-up: declare attached boards, enable the system,
-        and set up the magnet board if present. Safe to call regardless of
-        the board's current state."""
+        and set up the magnet and screener boards if present. Safe to call
+        regardless of the board's current state."""
         self.disable()  # board attachment requires a disabled system
         self.attach_led_board(led_board)
         self.attach_magnet_board(magnet_board)
+        self.attach_screener_board(screener_board)
         self.enable()
         if magnet_board:
             self.magnet.setup()
+        if screener_board:
+            self.screener.setup()
 
     def enable(self) -> None:
         """Brings up buses, IO and the heartbeat; most commands need this."""
@@ -190,6 +249,11 @@ class SyncBoard:
     def attach_magnet_board(self, present: bool = True) -> None:
         """Declares the magnet board present (system must be disabled)."""
         self._t.request("attachMagnet", present)
+
+    def attach_screener_board(self, present: bool = True) -> None:
+        """Declares the screener board present in Expansion 2 (system must be
+        disabled). It claims GPIO31 for the RF switch."""
+        self._t.request("attachScreener", present)
 
     def scan_i2c(self) -> list[int]:
         """Returns the responding I2C addresses (requires an enabled system)."""
@@ -310,6 +374,311 @@ class MagnetApi:
     def set_dac(self, channel: int, volts: float) -> None:
         """Raw magnet-board DAC write (bring-up/debug use)."""
         self._t.request("setMagnetDac", channel, float(volts))
+
+
+class ScreenerApi:
+    """The screener board in Expansion 2 (hardware/ScreenerMobo; the control
+    map is in src/Screener.h).
+
+    Everything but :meth:`setup` needs the board set up since the last
+    enable; ``SyncBoard.initialise(screener_board=True)`` does that. The
+    sensor boards on its Con_S cable are :attr:`field_sensor`
+    (:class:`FieldSensorApi`) and :attr:`air_sensor` (:class:`AirSensorApi`).
+    """
+
+    NUM_SWITCHES = 7
+    NUM_RTDS = 8
+    AINCOM = 12                    # ADS124S08 input code for AINCOM (0-11 = AIN0-11)
+    INTERNAL_REF_V = 2.5
+    RTD_REF_OHMS = 4700.0          # reference resistor; RTD full scale is half this (gain 2)
+
+    #: ADS7828 channel -> net on the ScreenerMobo sheet (what drives it).
+    RF_CHANNELS: dict[int, str] = {
+        1: "RF1_Mag",    # AD8318 on Con1 (bore pickup)
+        2: "RF12_Mag",   # AD8302 #1 gain, Con1 vs Con2
+        3: "RF12_Ph",    # AD8302 #1 phase, Con1 vs Con2
+        4: "RF2_Mag",    # AD8318 on Con2 (forward power)
+        5: "RF23_Mag",   # AD8302 #2 gain, Con2 vs Con3
+        6: "RF23_Ph",    # AD8302 #2 phase, Con2 vs Con3
+        7: "RF3_Mag",    # AD8318 on Con3 (backward power)
+        8: "RF4_Mag",    # AD8318 on Con4 (spare; needs ScreenerEnable.RF_SPARE)
+    }
+
+    #: PCA9685 channel -> net it drives (channel n is output LED(n-1)).
+    PWM_CHANNELS: dict[int, str] = {
+        1: "RF_Enable", 2: "RF_Enable2",
+        **{2 + n: f"SWEN{n}" for n in range(1, 8)},
+        10: "(unconnected)", 11: "FluxgateEnable", 12: "SensorsEnable",
+        13: "RTD_Polarity", 14: "MX1", 15: "MX2", 16: "MX3",
+    }
+
+    def __init__(self, transport: Transport):
+        self._t = transport
+        self.field_sensor = FieldSensorApi(transport, self)
+        self.air_sensor = AirSensorApi(transport, self)
+
+    def setup(self) -> ScreenerChips:
+        """Probes the board's three chips independently, turning every output
+        off and resetting the ADS124S08, and reports which answered (the
+        firmware also logs a warning per missing chip). Must be re-run after
+        every system enable."""
+        fields = self._t.request("setupScreener")
+        return ScreenerChips(*(f == "1" for f in fields[:3]))
+
+    # -- outputs ---------------------------------------------------------------
+
+    def set_switch(self, channel: int, duty: float = 1.0) -> None:
+        """Sets power switch 1..7: 1.0 fully on, 0 off, in between PWM at
+        ~200 Hz. The switches are low-side: a load sits between HP-1 pin 1
+        (12 V) and pin 2 (VL)."""
+        self._t.request("setScreenerSwitch", channel, float(duty))
+
+    def all_switches_off(self) -> None:
+        self._t.request("setScreenerSwitch", 0, 0.0)
+
+    def set_enable(self, which: ScreenerEnable, on: bool = True) -> None:
+        """Switches a rail or detector enable (see :class:`ScreenerEnable`).
+
+        Readings that need the fluxgate or sensors rail power it themselves
+        and switch it off afterwards; a rail switched on here stays on
+        through them (for continuous monitoring, or the LED displays).
+        """
+        self._t.request("setScreenerEnable", int(which), on)
+
+    def set_pwm(self, channel: int, duty: float) -> None:
+        """Raw PCA9685 output 1..16 (0 = all, off only), for bring-up; see
+        :attr:`PWM_CHANNELS` for what each drives."""
+        self._t.request("setScreenerPwm", channel, float(duty))
+
+    def set_rf_switch(self, on: bool) -> None:
+        """Drives the RF switch control line (5 V TTL on RFS1)."""
+        self._t.request("setScreenerRfSwitch", on)
+
+    def all_off(self) -> None:
+        """Every PCA9685 output (switches, enables, RTD mux) and the RF
+        switch line low. Attempts both even if one fails (e.g. no PCA9685),
+        then re-raises the first error."""
+        errors: list[SyncBoardError] = []
+        for step in (lambda: self.set_pwm(0, 0.0), lambda: self.set_rf_switch(False)):
+            try:
+                step()
+            except SyncBoardError as exc:
+                errors.append(exc)
+        if errors:
+            raise errors[0]
+
+    # -- inputs ----------------------------------------------------------------
+
+    def read_rf(self, channel: int) -> float:
+        """RF detector output in volts (ADS7828 channel 1..8, 0..1.8 V); see
+        :attr:`RF_CHANNELS`."""
+        return float(self._t.request("readScreenerRf", channel)[0])
+
+    def read_adc(self, ainp: int, ainn: int = AINCOM,
+                 ref: ScreenerRef = ScreenerRef.INTERNAL, gain: int = 1) -> AdcReading:
+        """One ADS124S08 conversion of AIN<ainp> - AIN<ainn> (0..11, or 12 =
+        AINCOM) at gain 1..128; gain 1 bypasses the PGA. Takes ~80 ms."""
+        fields = self._t.request("readScreenerAdc", ainp, ainn, int(ref), gain)
+        return AdcReading(int(fields[0]), float(fields[1]))
+
+    def read_adc_volts(self, ainp: int, ainn: int = AINCOM, gain: int = 1) -> float:
+        """:meth:`read_adc` against the internal reference, in volts."""
+        return self.read_adc(ainp, ainn, ScreenerRef.INTERNAL, gain).ratio * self.INTERNAL_REF_V
+
+    RTD_TIMEOUT_S = 5.0  # a chopped reading blocks ~1.1 s in firmware
+
+    def read_rtd(self, channel: int, polarity: int | None = None) -> float:
+        """Four-wire resistance in ohms on RTD channel 1..8 (1-6: HRTD
+        headers, 7: the FieldSensor, 8: the AirSensor). The RTD muxes run
+        from the sensors rail, which the reading powers if it is off.
+        Convert with :func:`pt1000_celsius`.
+
+        By default this is the chopped reading: the mean of six conversions
+        with the excitation reversed between each, which cancels thermal-EMF
+        offsets in the wiring. Takes ~1.1 s.
+
+        For bring-up, ``polarity`` takes one conversion at that level of the
+        RTD_Polarity line instead: 0 sends the excitation into the D- wire,
+        1 into D+. Readings are sign-corrected, so both should agree; half
+        their difference is the wiring offset. Takes ~190 ms.
+        """
+        args = (channel,) if polarity is None else (channel, bool(polarity))
+        return float(self._t.request("readScreenerRtd", *args, timeout=self.RTD_TIMEOUT_S)[0])
+
+    def read_supply(self, analog: bool = True) -> float:
+        """The ADS124S08's supply monitor in volts: AVDD (the board's
+        heartbeat-gated 5 V analog rail) or, with ``analog=False``, DVDD
+        (3.3 V)."""
+        return float(self._t.request("readScreenerSupply", 0 if analog else 1)[0])
+
+
+def pt1000_celsius(ohms: float, r0: float = 1000.0) -> float:
+    """Converts a platinum RTD resistance to degrees C (IEC 60751, without
+    the sub-zero C term: exact from 0 C up, within 0.01 C down to -40 C).
+    The screener board's RTD inputs are sized for PT1000s."""
+    a, b = 3.9083e-3, -5.775e-7
+    return (-a + math.sqrt(a * a - 4 * b * (1 - ohms / r0))) / (2 * b)
+
+
+def sht40_rh_percent(fraction: float) -> float:
+    """Converts the SHT40I-HD1x's analog RH output, as a fraction of its
+    supply, to %RH (standard ARP characteristic, datasheet eq. 1). Not
+    clipped: the datasheet allows readings a little outside 0..100 %RH."""
+    return -12.5 + 125.0 * fraction
+
+
+def sht40_celsius(fraction: float) -> float:
+    """Converts the SHT40I-HD1x's analog T output, as a fraction of its
+    supply, to degrees C (standard ARP characteristic, datasheet eq. 2)."""
+    return -66.875 + 218.75 * fraction
+
+
+def _settle_args(settle_ms: float | None) -> tuple[int, ...]:
+    """The optional settle argument: omitted to use the firmware's default."""
+    return () if settle_ms is None else (int(round(settle_ms)),)
+
+
+def _reading_timeout(settle_ms: float, conversions: int) -> float:
+    """Reply deadline for a powered reading (each conversion ~80 ms)."""
+    return 2.0 + settle_ms / 1000.0 + 0.1 * conversions
+
+
+class FieldSensorApi:
+    """The FieldSensor flex (hardware/FieldSensor; src/FieldSensor.h): a
+    DRV425 fluxgate, a DRV5055Z3 Hall sensor and a PT1000, read through the
+    screener board. Use it as ``sb.screener.field_sensor``.
+
+    The DRV425 heats the sensor head, so each reading powers the rail it
+    needs only while it runs: the firmware switches the rail on, waits
+    ``settle_ms`` (``None`` = its default, below), converts, and switches it
+    off again. A rail held on with :meth:`ScreenerApi.set_enable` stays on.
+    Needs the screener's ADS124S08 and PCA9685.
+    """
+
+    RTD_CHANNEL = 7
+    MAX_COUNT = 16                 # conversions per reading, ~80 ms each
+    FLUXGATE_SETTLE_MS = 500       # the firmware's defaults (src/FieldSensor.h)
+    HALL_SETTLE_MS = 20
+    #: DRV425: 12.2 mA/mT of compensation current through the 15 ohm shunt
+    #: (R-Shunt), times the shunt amplifier's gain of 4 V/V.
+    FLUXGATE_V_PER_MT = 12.2e-3 * 15.0 * 4.0
+    #: Beyond this VOUT - REFOUT, VOUT is near its rail and the field is
+    #: outside the DRV425's +-2 mT range.
+    FLUXGATE_LIMIT_V = 1.5
+    #: DRV5055Z3: 25 mV/mT at 5 V, and ratiometric to its supply, so a unit
+    #: of output-to-supply ratio is 5 V / 25 mV/mT.
+    HALL_MT_PER_RATIO = 5.0 / 25e-3
+    HALL_RANGE_MT = 85.0           # the DRV5055Z3's guaranteed linear range
+
+    def __init__(self, transport: Transport, screener: "ScreenerApi"):
+        self._t = transport
+        self._screener = screener
+
+    def _floats(self, command: str, args: tuple, settle_ms: float | None,
+                default_settle_ms: float, conversions: int) -> list[float]:
+        settle = default_settle_ms if settle_ms is None else settle_ms
+        fields = self._t.request(command, *args, *_settle_args(settle_ms),
+                                 timeout=_reading_timeout(settle, conversions))
+        return [float(f) for f in fields]
+
+    def read_fluxgate_volts(self, count: int = 1,
+                            settle_ms: float | None = None) -> list[float]:
+        """DRV425 output VOUT - REFOUT in volts, ``count`` conversions
+        (1..16) in one power-on of the fluxgate rail. The firmware first
+        checks that REFOUT sits near 1.65 V, so an unpowered or unplugged
+        fluxgate raises instead of reading as zero field."""
+        return self._floats("readFieldFluxgate", (count,), settle_ms,
+                            self.FLUXGATE_SETTLE_MS, count + 1)
+
+    def read_fluxgate_mt(self, count: int = 1, settle_ms: float | None = None) -> float:
+        """Field along the fluxgate's sensing axis in mT, the mean of
+        ``count`` conversions. Raises ValueError beyond its +-2 mT range."""
+        volts = self.read_fluxgate_volts(count, settle_ms)
+        worst = max(volts, key=abs)
+        if abs(worst) > self.FLUXGATE_LIMIT_V:
+            raise ValueError(f"fluxgate output {worst:+.3f} V is at its rail: the field is "
+                             "beyond the DRV425's +-2 mT range")
+        return statistics.fmean(volts) / self.FLUXGATE_V_PER_MT
+
+    def read_hall_ratios(self, count: int = 1,
+                         settle_ms: float | None = None) -> list[float]:
+        """Hall sensor output as a fraction of its own supply (0.5 at zero
+        field), ``count`` conversions in one power-on of the sensors rail."""
+        return self._floats("readFieldHall", (count,), settle_ms,
+                            self.HALL_SETTLE_MS, count + 1)
+
+    def read_hall_mt(self, count: int = 1, settle_ms: float | None = None) -> float:
+        """Field through the Hall sensor's package in mT, the mean of
+        ``count`` conversions. Positive is flux leaving its marked face (a
+        south pole in front of it). Raises ValueError beyond +-85 mT."""
+        ratio = statistics.fmean(self.read_hall_ratios(count, settle_ms))
+        field_mt = (ratio - 0.5) * self.HALL_MT_PER_RATIO
+        if abs(field_mt) > self.HALL_RANGE_MT:
+            raise ValueError(f"Hall reading {field_mt:+.1f} mT is beyond the DRV5055Z3's "
+                             f"+-{self.HALL_RANGE_MT:g} mT linear range")
+        return field_mt
+
+    def read_supply(self, settle_ms: float | None = None) -> float:
+        """The Hall sensor's supply at the sensor in volts: the flex 5 V
+        after the cable. About 5 V with the flex connected; the humidity
+        sensor on the AirSensor runs from the same 5 V."""
+        return self._floats("readFieldSupply", (), settle_ms, self.HALL_SETTLE_MS, 2)[0]
+
+    def read_rtd_ohms(self, polarity: int | None = None) -> float:
+        """The FieldSensor's PT1000 (screener RTD channel 7); see
+        :meth:`ScreenerApi.read_rtd`."""
+        return self._screener.read_rtd(self.RTD_CHANNEL, polarity)
+
+    def read_temperature_c(self) -> float:
+        """The FieldSensor's PT1000 in degrees C (chopped, ~1.1 s)."""
+        return pt1000_celsius(self.read_rtd_ohms())
+
+
+class AirSensorApi:
+    """The AirSensor board (hardware/AirSensor; src/AirSensor.h): an analog
+    SHT40I-HD1F humidity and temperature sensor and a PT1000, read through
+    the screener board. Use it as ``sb.screener.air_sensor``.
+
+    Like :class:`FieldSensorApi`, each reading powers the sensors rail only
+    while it runs. Needs the screener's ADS124S08 and PCA9685.
+    """
+
+    RTD_CHANNEL = 8
+    HUMIDITY_SETTLE_MS = 300  # the firmware's default (src/AirSensor.h)
+    SUPPLY_V = 5.0            # nominal flex 5 V, for AirReference.OFFSET
+    OFFSET_V = 2.5            # nominal 2V5_Offset, for AirReference.OFFSET
+
+    def __init__(self, transport: Transport, screener: "ScreenerApi"):
+        self._t = transport
+        self._screener = screener
+
+    def read_humidity(self, reference: AirReference = AirReference.FLEX_SUPPLY,
+                      settle_ms: float | None = None) -> AirReading:
+        """One SHT40I reading, both outputs in one power-on (the outputs
+        take 200 ms to settle after power-up, so ~0.6 s in all).
+
+        ``FLEX_SUPPLY`` reads the outputs ratiometrically against the flex
+        5 V as the FieldSensor senses it, which cancels the supply and
+        needs the FieldSensor plugged in. ``OFFSET`` works without it but
+        assumes the nominal 5 V supply and 2.5 V offset: at room conditions
+        each 1 % of supply error costs about 0.9 C and 0.6 %RH.
+        """
+        settle = self.HUMIDITY_SETTLE_MS if settle_ms is None else settle_ms
+        fields = self._t.request("readAirHumidity", int(reference), *_settle_args(settle_ms),
+                                 timeout=_reading_timeout(settle, 3))
+        rh, t = float(fields[0]), float(fields[1])
+        if reference == AirReference.OFFSET:  # volts relative to 2V5_Offset
+            rh, t = ((v + self.OFFSET_V) / self.SUPPLY_V for v in (rh, t))
+        return AirReading(sht40_rh_percent(rh), sht40_celsius(t), rh, t)
+
+    def read_rtd_ohms(self, polarity: int | None = None) -> float:
+        """The AirSensor's PT1000 (screener RTD channel 8); see
+        :meth:`ScreenerApi.read_rtd`."""
+        return self._screener.read_rtd(self.RTD_CHANNEL, polarity)
+
+    def read_temperature_c(self) -> float:
+        """The AirSensor's PT1000 in degrees C (chopped, ~1.1 s)."""
+        return pt1000_celsius(self.read_rtd_ohms())
 
 
 class SignalApi:

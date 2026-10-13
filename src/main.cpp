@@ -1,18 +1,22 @@
 // SyncBoard firmware: command dispatch and the main loop.
 //
 // Everything here is a thin protocol layer; the actual behaviour lives in
-// the subsystem modules (Io, Leds, Magnet, Signals, Imaging, System).
+// the subsystem modules (Io, Leds, Magnet, Screener, FieldSensor, AirSensor,
+// Signals, Imaging, System).
 
 #include <Arduino.h>
 
+#include "AirSensor.h"
 #include "Calibration.h"
 #include "Chips.h"
+#include "FieldSensor.h"
 #include "Imaging.h"
 #include "Io.h"
 #include "Leds.h"
 #include "Magnet.h"
 #include "Pins.h"
 #include "Protocol.h"
+#include "Screener.h"
 #include "Signals.h"
 #include "State.h"
 #include "System.h"
@@ -53,6 +57,15 @@ bool requireLed() {
   return true;
 }
 
+bool requireScreener() {
+  if (!requireEnabled()) return false;
+  if (!gScreenerAttached) {
+    fault("screener board not attached (send attachScreener/1 before enabling)");
+    return false;
+  }
+  return true;
+}
+
 // ---- System ----------------------------------------------------------------
 
 void cmdPing() {
@@ -69,6 +82,7 @@ void cmdStatus() {
   protocol::addInt(gLedAttached ? 1 : 0);
   protocol::addInt(gMagnetAttached ? 1 : 0);
   protocol::addInt(imaging::syncMode());
+  protocol::addInt(gScreenerAttached ? 1 : 0);
   protocol::endReply();
 }
 
@@ -103,6 +117,12 @@ void cmdAttachMagnet() {
   const bool present = argBool(0);
   if (faultPending() || !requireDisabled()) return;
   gMagnetAttached = present;
+}
+
+void cmdAttachScreener() {
+  const bool present = argBool(0);
+  if (faultPending() || !requireDisabled()) return;
+  gScreenerAttached = present;
 }
 
 void cmdScanI2c() {
@@ -148,6 +168,10 @@ void cmdSetupGpio() {
   if (faultPending() || !requireDisabled()) return;
   if (gMagnetAttached && enabled && (label == 29 || label == 30 || label == 5 || label == 6)) {
     fault("GPIO29/30 carry the magnet board's enable/select lines while it is attached");
+    return;
+  }
+  if (gScreenerAttached && enabled && (label == 31 || label == 7)) {
+    fault("GPIO31 carries the screener board's RF switch line while it is attached");
     return;
   }
   const int index = io::gpioIndexFromLabel(label);
@@ -350,6 +374,172 @@ void cmdSetMagnetDac() {
   magnet::setDacVolts(ch, volts);
 }
 
+// ---- Screener board --------------------------------------------------------
+
+void cmdSetupScreener() {
+  if (!requireScreener()) return;
+  screener::setup();
+  if (faultPending()) return;
+  protocol::beginOk();
+  protocol::addInt(screener::pwmFound() ? 1 : 0);
+  protocol::addInt(screener::rfAdcFound() ? 1 : 0);
+  protocol::addInt(screener::adcFound() ? 1 : 0);
+  protocol::endReply();
+}
+
+void cmdSetScreenerSwitch() {
+  const int ch = argInt(0);
+  const float duty = argFloat(1);
+  if (faultPending() || !requireScreener()) return;
+  screener::setSwitch(ch, duty);
+}
+
+void cmdSetScreenerEnable() {
+  const int which = argInt(0);
+  const bool on = argBool(1);
+  if (faultPending() || !requireScreener()) return;
+  // Range-check before the cast: enum conversion would wrap mod 256.
+  if (which < 0 || which > (int)screener::Enable::kSensors) {
+    fault("screener enable %d not recognised (0 rf, 1 rf spare, 2 fluxgate, 3 sensors)", which);
+    return;
+  }
+  screener::setEnable((screener::Enable)which, on);
+}
+
+void cmdSetScreenerPwm() {
+  const int ch = argInt(0);
+  const float duty = argFloat(1);
+  if (faultPending() || !requireScreener()) return;
+  screener::setPwm(ch, duty);
+}
+
+void cmdSetScreenerRfSwitch() {
+  const bool on = argBool(0);
+  if (faultPending() || !requireScreener()) return;
+  screener::setRfSwitch(on);
+}
+
+void cmdReadScreenerRf() {
+  const int ch = argInt(0);
+  if (faultPending() || !requireScreener()) return;
+  const float volts = screener::readRfVolts(ch);
+  if (faultPending()) return;
+  protocol::beginOk();
+  protocol::addFloat(volts);
+  protocol::endReply();
+}
+
+void cmdReadScreenerAdc() {
+  const int ainp = argInt(0);
+  const int ainn = argInt(1);
+  const int ref = argInt(2);
+  const int gain = argInt(3);
+  if (faultPending() || !requireScreener()) return;
+  if (ref < 0 || ref > (int)screener::Ref::kInternal) {
+    fault("ADC reference %d not recognised (0 RTD, 1 Hall, 2 internal)", ref);
+    return;
+  }
+  int32_t code;
+  const float ratio = screener::readAdcRatio(ainp, ainn, (screener::Ref)ref, gain, code);
+  if (faultPending()) return;
+  protocol::beginOk();
+  protocol::addInt(code);
+  protocol::addFloat(ratio);
+  protocol::endReply();
+}
+
+void cmdReadScreenerRtd() {
+  const int ch = argInt(0);
+  // No polarity: the chopped reading; with one, a single conversion.
+  const bool chopped = protocol::argCount() < 2;
+  const bool polarityHigh = !chopped && argBool(1);
+  if (faultPending() || !requireScreener()) return;
+  const float ohms =
+      chopped ? screener::readRtdOhms(ch) : screener::readRtdOhms(ch, polarityHigh);
+  if (faultPending()) return;
+  protocol::beginOk();
+  protocol::addFloat(ohms);
+  protocol::endReply();
+}
+
+void cmdReadScreenerSupply() {
+  const int which = argInt(0);  // 0 = AVDD (5 V analog), 1 = DVDD (3.3 V digital)
+  if (faultPending() || !requireScreener()) return;
+  if (which != 0 && which != 1) {
+    fault("supply %d not recognised (0 = AVDD, 1 = DVDD)", which);
+    return;
+  }
+  const float volts = screener::readSupplyVolts(which == 0);
+  if (faultPending()) return;
+  protocol::beginOk();
+  protocol::addFloat(volts);
+  protocol::endReply();
+}
+
+// ---- Sensor boards on the screener's Con_S ---------------------------------
+//
+// Each reading powers the rail it needs only while it runs, then switches it
+// off again (screener::PoweredRail). The optional last argument is how long
+// the rail must have been on before converting, in ms.
+
+uint32_t argSettleMs(size_t i, uint32_t defaultMs) {
+  if (protocol::argCount() <= i) return defaultMs;
+  const int ms = argInt(i);
+  if (ms < 0 || ms > (int)screener::kMaxSettleMs) {
+    fault("settle time %d ms out of range 0..%lu", ms, (unsigned long)screener::kMaxSettleMs);
+    return 0;
+  }
+  return (uint32_t)ms;
+}
+
+void replyFloats(const float* values, int count) {
+  protocol::beginOk();
+  for (int i = 0; i < count; i++) protocol::addFloat(values[i]);
+  protocol::endReply();
+}
+
+void cmdReadFieldFluxgate() {
+  const int count = argInt(0);
+  const uint32_t settleMs = argSettleMs(1, field_sensor::kFluxgateSettleMs);
+  if (faultPending() || !requireScreener()) return;
+  float volts[field_sensor::kMaxCount];
+  field_sensor::readFluxgateVolts(count, settleMs, volts);
+  if (faultPending()) return;
+  replyFloats(volts, count);
+}
+
+void cmdReadFieldHall() {
+  const int count = argInt(0);
+  const uint32_t settleMs = argSettleMs(1, field_sensor::kHallSettleMs);
+  if (faultPending() || !requireScreener()) return;
+  float ratios[field_sensor::kMaxCount];
+  field_sensor::readHallRatio(count, settleMs, ratios);
+  if (faultPending()) return;
+  replyFloats(ratios, count);
+}
+
+void cmdReadFieldSupply() {
+  const uint32_t settleMs = argSettleMs(0, field_sensor::kHallSettleMs);
+  if (faultPending() || !requireScreener()) return;
+  const float volts = field_sensor::readSupplyVolts(settleMs);
+  if (faultPending()) return;
+  replyFloats(&volts, 1);
+}
+
+void cmdReadAirHumidity() {
+  const int ref = argInt(0);
+  const uint32_t settleMs = argSettleMs(1, air_sensor::kHumiditySettleMs);
+  if (faultPending() || !requireScreener()) return;
+  if (ref < 0 || ref > (int)air_sensor::Reference::kOffset) {
+    fault("humidity reference %d not recognised (0 flex supply, 1 offset)", ref);
+    return;
+  }
+  float outputs[2];
+  air_sensor::readOutputs((air_sensor::Reference)ref, settleMs, outputs[0], outputs[1]);
+  if (faultPending()) return;
+  replyFloats(outputs, 2);
+}
+
 // ---- Signals ---------------------------------------------------------------
 
 void cmdSetupSignal() {
@@ -490,6 +680,7 @@ constexpr CommandEntry kCommands[] = {
     {"factoryReset", cmdFactoryReset},
     {"attachLed", cmdAttachLed},
     {"attachMagnet", cmdAttachMagnet},
+    {"attachScreener", cmdAttachScreener},
     {"scanI2c", cmdScanI2c},
     {"readDi", cmdReadDi},
     {"writeDo", cmdWriteDo},
@@ -518,6 +709,19 @@ constexpr CommandEntry kCommands[] = {
     {"readHall", cmdReadHall},
     {"readMagnetAdc", cmdReadMagnetAdc},
     {"setMagnetDac", cmdSetMagnetDac},
+    {"setupScreener", cmdSetupScreener},
+    {"setScreenerSwitch", cmdSetScreenerSwitch},
+    {"setScreenerEnable", cmdSetScreenerEnable},
+    {"setScreenerPwm", cmdSetScreenerPwm},
+    {"setScreenerRfSwitch", cmdSetScreenerRfSwitch},
+    {"readScreenerRf", cmdReadScreenerRf},
+    {"readScreenerAdc", cmdReadScreenerAdc},
+    {"readScreenerRtd", cmdReadScreenerRtd},
+    {"readScreenerSupply", cmdReadScreenerSupply},
+    {"readFieldFluxgate", cmdReadFieldFluxgate},
+    {"readFieldHall", cmdReadFieldHall},
+    {"readFieldSupply", cmdReadFieldSupply},
+    {"readAirHumidity", cmdReadAirHumidity},
     {"setupSignal", cmdSetupSignal},
     {"loadSignal", cmdLoadSignal},
     {"loadSignalUniform", cmdLoadSignalUniform},

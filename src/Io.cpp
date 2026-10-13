@@ -86,6 +86,12 @@ void turnChipsOff() {
   if (gMagnetAttached) {
     chips::ad5669Setup(chips::kMagDacAddr, false);
   }
+  if (gScreenerAttached) {
+    // Its outputs are also forced low while the heartbeat is down, but the
+    // registers survive: without this they would come back on at the next
+    // enable.
+    chips::pca9685SetDuty(chips::kScreenerPwmAddr, 0, 0.0f);
+  }
 }
 
 }  // namespace
@@ -301,6 +307,9 @@ void configure(bool activate) {
   SPI.setBitOrder(MSBFIRST);
   pinModeFast(pins::kSpiCs0, OUTPUT);
   pinModeFast(pins::kSpiCs1, OUTPUT);
+  // Idle high: a low CS1 would let the screener board's ADC take the
+  // AD5668 traffic as commands.
+  digitalWriteFast(pins::kSpiCs1, HIGH);
 
   Wire.begin();
   // 100 kHz: the bus spans multiple boards and has significant capacitance.
@@ -309,6 +318,8 @@ void configure(bool activate) {
   chips::pca9685Init(chips::kSyncPwmSwitchesAddr, /*slowClock=*/true);
   chips::pca9685Init(chips::kSyncPwmLevelShiftAddr);
   if (gLedAttached) chips::pca9685Init(chips::kLedPwmAddr);
+  // The screener board's power switches want the slow (~200 Hz) PWM too.
+  if (gScreenerAttached) chips::pca9685Init(chips::kScreenerPwmAddr, /*slowClock=*/true);
   bulkShiftersEnabled = false;  // matches what turnChipsOff() writes
   turnChipsOff();
 

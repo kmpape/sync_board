@@ -8,6 +8,8 @@ day-to-day functional testing use `hwtest/checkout.py` instead.
 |-------|-------|
 | [syncboard.md](syncboard.md) | SyncBoard (Teensy 4.1 main board) |
 | [led-board.md](led-board.md) | LED Control / Drive board |
+| [screener-board.md](screener-board.md) | Screener motherboard (Expansion 2) |
+| [sensor-boards.md](sensor-boards.md) | AirSensor and FieldSensor (on the screener's Con_S) |
 
 Some things that apply to every board:
 

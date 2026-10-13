@@ -1,0 +1,16 @@
+#pragma once
+
+#define SIMULATION 0
+#define V1_MACHINES 1
+#define V2_MACHINES 2
+#define V3_MACHINES 3
+
+#ifndef GENERATION
+    #define GENERATION V2_MACHINES
+#endif
+
+#if GENERATION == SIMULATION
+    #error "GENERATION=SIMULATION is not supported for Teensy firmware builds."
+#elif GENERATION != V1_MACHINES && GENERATION != V2_MACHINES && GENERATION != V3_MACHINES
+    #error "Unknown GENERATION value. Use -DGENERATION=V1_MACHINES or -DGENERATION=V2_MACHINES or -DGENERATION=V3_MACHINES."
+#endif

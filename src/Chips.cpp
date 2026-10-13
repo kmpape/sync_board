@@ -41,6 +41,26 @@ uint16_t voltsToCode16(float volts) {
   return (uint16_t)((volts / 3.3f) * 65535.0f);
 }
 
+// The ADS124S08 needs SPI mode 1; 1 MHz leaves ample margin for the round
+// trip through the screener board's isolator.
+const SPISettings kAds124s08Spi(1000000, MSBFIRST, SPI_MODE1);
+
+void ads124s08Select() {
+  SPI.beginTransaction(kAds124s08Spi);
+  digitalWriteFast(pins::kSpiCs1, LOW);
+  delayMicroseconds(1);  // CS setup, with margin for isolator channel skew
+}
+
+void ads124s08Deselect() {
+  delayMicroseconds(1);
+  digitalWriteFast(pins::kSpiCs1, HIGH);
+  SPI.endTransaction();
+  // The AD5668 writes run outside any transaction, on the defaults that
+  // SPI.begin() leaves (4 MHz, mode 0); put those back.
+  SPI.beginTransaction(SPISettings());
+  SPI.endTransaction();
+}
+
 }  // namespace
 
 uint8_t probe(uint8_t address) {
@@ -152,6 +172,46 @@ void ad5669Set(uint8_t i2cAddress, int channel, float volts) {
                            (uint8_t)((code >> 8) & 0xFF),
                            (uint8_t)(code & 0xFF)};
   i2cWrite(i2cAddress, data, 3);
+}
+
+void ads124s08Reset() {
+  ads124s08Select();
+  SPI.transfer(0x06);  // RESET
+  ads124s08Deselect();
+  delay(2);  // 4096 tCLK (1 ms) before the next command
+}
+
+uint8_t ads124s08ReadReg(uint8_t reg) {
+  ads124s08Select();
+  SPI.transfer((uint8_t)(0x20 | (reg & 0x1F)));  // RREG
+  SPI.transfer(0x00);                            // one register
+  const uint8_t value = SPI.transfer(0x00);
+  ads124s08Deselect();
+  return value;
+}
+
+void ads124s08WriteRegs(uint8_t firstReg, const uint8_t* values, size_t count) {
+  ads124s08Select();
+  SPI.transfer((uint8_t)(0x40 | (firstReg & 0x1F)));  // WREG
+  SPI.transfer((uint8_t)(count - 1));
+  for (size_t i = 0; i < count; i++) SPI.transfer(values[i]);
+  ads124s08Deselect();
+}
+
+void ads124s08Start() {
+  ads124s08Select();
+  SPI.transfer(0x08);  // START
+  ads124s08Deselect();
+}
+
+int32_t ads124s08ReadData() {
+  ads124s08Select();
+  SPI.transfer(0x12);  // RDATA
+  uint32_t raw = 0;
+  for (int i = 0; i < 3; i++) raw = (raw << 8) | SPI.transfer(0x00);
+  ads124s08Deselect();
+  // Sign-extend the 24-bit two's-complement result.
+  return (raw & 0x800000u) ? (int32_t)(raw | 0xFF000000u) : (int32_t)raw;
 }
 
 }  // namespace chips
