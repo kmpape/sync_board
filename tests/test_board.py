@@ -3,6 +3,7 @@
 import pytest
 
 from syncboard import CommandError
+from syncboard.config import ConfigError, LedConfig, MicroscopeConfig
 from syncboard.board import (
     AirReference,
     FieldSensorApi,
@@ -235,3 +236,20 @@ def test_pt1000_celsius():
     assert pt1000_celsius(1000.0) == pytest.approx(0.0, abs=1e-9)
     assert pt1000_celsius(1385.055) == pytest.approx(100.0, abs=1e-3)
     assert pt1000_celsius(921.599) == pytest.approx(-20.0, abs=1e-2)
+
+
+def test_led_calibrate_uses_the_microscope_config():
+    config = MicroscopeConfig(leds={5: LedConfig(5, 7.5, "450 nm")})
+    board = SyncBoard(StubTransport(), config)
+    board.leds.calibrate(5)
+    assert board._t.requests[-1] == ("calibrateLed", (5, 7.5))
+    board.leds.calibrate(5, 2.0)  # explicit value wins
+    assert board._t.requests[-1] == ("calibrateLed", (5, 2.0))
+
+
+def test_led_calibrate_refuses_an_unconfigured_channel(board):
+    with pytest.raises(ConfigError):
+        board.leds.calibrate(5)
+    assert not board._t.requests
+    board.leds.calibrate(5, 1.0)
+    assert board._t.requests[-1] == ("calibrateLed", (5, 1.0))

@@ -21,6 +21,12 @@ from syncboard.board import (
     sht40_celsius,
     sht40_rh_percent,
 )
+from syncboard.config import (
+    ConfigError,
+    LedConfig,
+    MicroscopeConfig,
+    load_config,
+)
 from syncboard.protocol import (
     CommandError,
     ProtocolError,
@@ -49,6 +55,10 @@ __all__ = [
     "Status",
     "LedMeasurement",
     "LedSetup",
+    "MicroscopeConfig",
+    "LedConfig",
+    "ConfigError",
+    "load_config",
     "SyncBoardError",
     "CommandError",
     "ProtocolError",

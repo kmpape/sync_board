@@ -4,6 +4,7 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+*.DS_Store
 
 # Prerequisites
 *.d
@@ -54,3 +55,6 @@ logs/
 .venv/
 uv.lock
 .ipynb_checkpoints/
+
+# Per-microscope configuration (see docs/microscope.example.toml)
+/microscope.toml

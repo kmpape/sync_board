@@ -140,6 +140,16 @@ bitmask for a conductor.
 Requires Python ≥ 3.11 and pyserial. Install with `pip install -e .` (or use
 `uv run` inside the repo).
 
+What is installed on a particular microscope (today: the rated current of
+each LED, which `leds.calibrate` ramps to) lives outside the package in
+`microscope.toml`. The client looks for it at `$SYNCBOARD_CONFIG`, then in
+the current working directory (the repo root is git-ignored for this), then
+at `~/.config/syncboard/microscope.toml`; a path can also be passed as
+`SyncBoard.connect(config=path)`. Copy
+[`docs/microscope.example.toml`](docs/microscope.example.toml) and edit it.
+Without a file the client still works, but `calibrate` needs its max
+current passed explicitly.
+
 Minimal example — flash an LED and read a voltage:
 
 ```python
@@ -268,6 +278,7 @@ code in the same step. Notable behavioural changes:
   and the GPIO PWM/analog modes were dropped.
 - The magnet enable/select GPIO lines are (re)configured by `setupMagnet`
   after each system enable, not only at attach time.
-- Wavelength→LED-channel mappings (e.g. 450 nm = channel 5) are application
-  configuration and no longer live in this package. The per-channel rated
-  current table survives as `LedApi.MAX_CURRENT_A` (the `calibrate` default).
+- Wavelength→LED-channel mappings (e.g. 450 nm = channel 5) and the
+  per-channel rated currents (the `calibrate` default) are microscope
+  configuration and no longer live in this package: see the TOML file
+  described under [Python client](#python-client).

@@ -18,12 +18,14 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import statistics
 import time
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Sequence
 
+from syncboard.config import ConfigError, MicroscopeConfig, load_config
 from syncboard.protocol import SyncBoardError
 from syncboard.transport import Transport
 
@@ -152,9 +154,12 @@ class SyncBoard:
 
     ENABLE_TIMEOUT_S = 5.0  # disable blocks ~1 s in firmware
 
-    def __init__(self, transport: Transport):
+    def __init__(self, transport: Transport,
+                 config: MicroscopeConfig | None = None):
         self._t = transport
-        self.leds = LedApi(transport)
+        #: What is installed on this microscope (see syncboard.config).
+        self.config = config if config is not None else MicroscopeConfig()
+        self.leds = LedApi(transport, self.config)
         self.magnet = MagnetApi(transport)
         self.screener = ScreenerApi(transport)
         self.signals = SignalApi(transport)
@@ -162,10 +167,21 @@ class SyncBoard:
         self.imaging = ImagingApi(transport)
 
     @classmethod
-    def connect(cls, port: str | None = None) -> "SyncBoard":
+    def connect(cls, port: str | None = None,
+                config: str | os.PathLike | MicroscopeConfig | None = None,
+                ) -> "SyncBoard":
         """Opens the board (auto-discovering the port if none is given) and
-        verifies it answers as a SyncBoard."""
-        board = cls(Transport(port))
+        verifies it answers as a SyncBoard.
+
+        ``config`` is the microscope configuration: a loaded
+        :class:`~syncboard.config.MicroscopeConfig`, a path to the TOML
+        file, or None to use ``$SYNCBOARD_CONFIG`` /
+        ``~/.config/syncboard/microscope.toml`` (missing file = empty
+        configuration).
+        """
+        if not isinstance(config, MicroscopeConfig):
+            config = load_config(config)
+        board = cls(Transport(port), config)
         board.ping()
         return board
 
@@ -264,30 +280,35 @@ class SyncBoard:
 class LedApi:
     CALIBRATE_TIMEOUT_S = 60.0
 
-    #: Rated maximum current per channel for the LEDs installed on this
-    #: microscope. Update when the physical LEDs change; calibrate() refuses
-    #: to default a channel that is not listed here.
-    MAX_CURRENT_A: dict[int, float] = {1: 10.0, 2: 8.0, 3: 12.0, 4: 8.0, 7: 6.0}
-
-    def __init__(self, transport: Transport):
+    def __init__(self, transport: Transport,
+                 config: MicroscopeConfig | None = None):
         self._t = transport
+        self._config = config if config is not None else MicroscopeConfig()
+
+    def max_current_a(self, channel: int) -> float:
+        """The configured max current for a channel (what calibrate() ramps
+        to, so level 1.0 is 95 % of it). Raises :class:`ConfigError` if the
+        microscope configuration does not list the channel."""
+        led = self._config.led(channel)
+        if led is None:
+            where = self._config.path or "the microscope config (see docs/microscope.example.toml)"
+            raise ConfigError(
+                f"LED channel {channel} is not listed in {where}; "
+                f"add it there or pass max_current_a explicitly")
+        return led.max_current_a
 
     def calibrate(self, channel: int, max_current_a: float | None = None) -> None:
         """Sweeps the LED to map levels 0..1 onto [turn-on, max current].
 
-        The max current defaults to the channel's rating in
-        :attr:`MAX_CURRENT_A`; pass it explicitly only when you know the
-        installed LED tolerates it. Run once per newly connected LED; the
-        result is stored in EEPROM. Blocks for a few seconds and flashes
-        the LED.
+        The max current defaults to the channel's entry in the microscope
+        configuration (:meth:`max_current_a`). Use the same value every
+        time for a given LED: it defines what each level means in amps,
+        and the optical calibration and photodiode gain are built on it.
+        Run once per newly connected LED; the result is stored in EEPROM.
+        Blocks for a few seconds and flashes the LED.
         """
         if max_current_a is None:
-            if channel not in self.MAX_CURRENT_A:
-                raise ValueError(
-                    f"no rated current known for LED channel {channel}; "
-                    f"pass max_current_a explicitly (and update LedApi.MAX_CURRENT_A)"
-                )
-            max_current_a = self.MAX_CURRENT_A[channel]
+            max_current_a = self.max_current_a(channel)
         self._t.request("calibrateLed", channel, float(max_current_a),
                         timeout=self.CALIBRATE_TIMEOUT_S)
 

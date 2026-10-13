@@ -1,0 +1,24 @@
+# Per-microscope configuration for the syncboard Python client.
+#
+# Copy to microscope.toml in the directory scripts run from (the repo root,
+# where it is git-ignored), or to ~/.config/syncboard/microscope.toml, or
+# point $SYNCBOARD_CONFIG at it, or pass the path to
+# SyncBoard.connect(config=...). It describes what is installed on this
+# particular microscope; the client package itself carries no such defaults.
+
+# One table per installed LED. `max_current_a` is what leds.calibrate()
+# ramps to: level 1.0 then means 95 % of it, level 0.1 means 9.5 % of it.
+# Keep it fixed for a given LED, because the optical calibration and the
+# photodiode gain (Rf on the photodiode board) are built on it. The board's
+# over-current trip is 10 A per channel, so values above about 9 A truncate
+# the calibration.
+
+[[leds]]
+channel = 5
+max_current_a = 7.5
+name = "450 nm, Luminus CFT-50X-B (binned at 7.5 A; 10 A CW abs max)"
+
+# [[leds]]
+# channel = 1
+# max_current_a = 10.0
+# name = "..."
